@@ -1,0 +1,52 @@
+PART2
+
+You are a senior Python + Streamlit developer.
+
+I have an existing trading dashboard using yfinance, pandas, ta, and plotly.
+
+Upgrade my system with the following requirements:
+
+1. Implement weighted scoring system:
+
+   * VWAP (2.0), EMA (1.5), MACD (1.0), RSI (0.5)
+
+2. Improve RSI thresholds:
+
+   * > 60 bullish, <40 bearish
+
+3. Add volume confirmation:
+
+   * breakout valid only if volume > rolling mean
+
+4. Add multi-timeframe analysis:
+
+   * Fetch 5m, 15m, 1h data
+   * Confirm trend alignment before signals
+
+5. Add ATR-based dynamic stop/target
+
+6. Add ADX indicator and use it to filter sideways markets
+
+7. Implement false breakout filter (2 candle confirmation)
+
+8. Add confidence score formula
+
+9. Create backtesting function using historical data
+
+10. Improve Streamlit UI:
+
+* colored BUY/SELL/HOLD box
+* confidence progress bar
+* indicator status panel
+* risk/reward box
+* "What to do now" section
+* chart annotations (buy/sell arrows)
+
+11. Optimize performance and modularize code
+
+Return:
+
+* clean modular Python code
+* functions separated (indicators, signals, UI)
+* comments explaining logic
+* ready-to-run Streamlit app

@@ -1,0 +1,238 @@
+PART 1: PROJECT IMPROVEMENT SPEC
+
+## 🚀 Project Upgrade Specification: Angad Trading Engine
+
+### 🎯 Objective
+
+Improve accuracy, reduce false signals, and enhance UI/UX of a rule-based intraday trading system built using Streamlit.
+
+---
+
+## 🔹 1. Indicator Weighting System
+
+Replace equal scoring with weighted scoring:
+
+* VWAP → weight = 2.0
+* EMA Trend → weight = 1.5
+* MACD → weight = 1.0
+* RSI → weight = 0.5
+
+### Logic:
+
+```
+score = sum(weight * signal_value)
+```
+
+Where:
+
+* bullish = +1
+* bearish = -1
+* neutral = 0
+
+---
+
+## 🔹 2. RSI Threshold Improvement
+
+Update RSI logic:
+
+* RSI > 60 → bullish (+1)
+* RSI < 40 → bearish (-1)
+* 40–60 → neutral (0)
+
+---
+
+## 🔹 3. Volume Confirmation (Critical)
+
+Add breakout validation:
+
+```
+if price_breakout and volume > rolling_avg_volume:
+    breakout_valid = True
+else:
+    breakout_valid = False
+```
+
+---
+
+## 🔹 4. Multi-Timeframe Analysis
+
+Fetch data for:
+
+* 5m (entry)
+* 15m (confirmation)
+* 1h (trend)
+
+### Rule:
+
+```
+BUY only if:
+5m bullish AND 15m bullish AND 1h trend bullish
+```
+
+---
+
+## 🔹 5. ATR-Based Dynamic Targets
+
+Improve stop/target:
+
+* Strong trend → Target = 3 × ATR
+* Weak trend → Target = 1.5 × ATR
+
+---
+
+## 🔹 6. False Breakout Filter
+
+Add condition:
+
+```
+Breakout must sustain for at least 2 consecutive candles
+```
+
+---
+
+## 🔹 7. Trend Strength (ADX)
+
+Add ADX indicator:
+
+* ADX > 25 → strong trend
+* ADX < 20 → sideways → prefer HOLD
+
+---
+
+## 🔹 8. Confidence Score Formula
+
+Replace static confidence:
+
+```
+confidence = (abs(score) / total_weight) * 100
+```
+
+---
+
+## 🔹 9. Backtesting Module
+
+Create module:
+
+* Input: historical data (1 year)
+* Output:
+
+  * win rate
+  * loss rate
+  * avg profit
+  * max drawdown
+
+---
+
+## 🔹 10. AI Prediction Layer (Optional)
+
+Add ML model:
+
+* Input features:
+
+  * RSI
+  * MACD
+  * EMA diff
+  * VWAP distance
+  * Volume ratio
+
+* Output:
+
+  * probability of UP/DOWN
+
+Use:
+
+* Logistic Regression or RandomForest
+
+---
+
+# 🎨 UI/UX Improvements
+
+## 🔹 1. Signal Display Box
+
+* BUY → green box
+* SELL → red box
+* HOLD → yellow box
+
+---
+
+## 🔹 2. Confidence Meter
+
+Add progress bar visualization
+
+---
+
+## 🔹 3. Indicator Status Panel
+
+Display:
+
+* EMA: Bullish/Bearish
+* RSI: Strong/Weak
+* MACD: Positive/Negative
+* VWAP: Above/Below
+
+---
+
+## 🔹 4. Risk/Reward Box
+
+Display:
+
+* Entry
+* Stop
+* Target
+* Risk/Reward ratio
+
+---
+
+## 🔹 5. “What to do now” Section
+
+Dynamic instruction:
+
+* If price > X → BUY
+* If price < Y → SELL
+* Else → WAIT
+
+---
+
+## 🔹 6. Chart Enhancements
+
+Add:
+
+* Buy/Sell arrows
+* VWAP line highlight
+* Breakout markers
+
+---
+
+## 🔹 7. Alerts System
+
+Add:
+
+* popup
+* sound
+* optional email trigger
+
+---
+
+## 🔹 8. Dark Mode Support
+
+---
+
+## 🔹 9. Mobile Responsiveness
+
+---
+
+## 🔹 10. Explainability Section
+
+Show:
+
+* why HOLD
+* what conditions needed for BUY/SELL
+
+---
+
+## ✅ Expected Outcome
+
+* Reduced false signals
+* Better breakout accuracy
+* More professional UI
+* Improved trader decision clarity
