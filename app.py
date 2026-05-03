@@ -426,7 +426,7 @@ def render_board():
             line=dict(color=color, dash="dot", width=1),
             opacity=0.55,
             annotation_text=str(row.get("label") or "")[:42],
-            annotation_position="end",
+            annotation_position="top right",
             annotation_font_size=11,
             annotation_font_color=color,
         )
