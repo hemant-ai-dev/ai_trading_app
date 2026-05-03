@@ -136,3 +136,28 @@ def format_intel_for_prompt(equity: list[NewsItem], world: list[NewsItem], max_c
 def news_digest_for_cache(equity: list[NewsItem], world: list[NewsItem]) -> str:
     blob = json.dumps([n.title for n in equity + world], ensure_ascii=False)
     return blob
+
+
+def format_headlines_indexed_for_prompt(
+    equity: list[NewsItem],
+    world: list[NewsItem],
+    *,
+    max_equity: int = 14,
+    max_world: int = 10,
+) -> tuple[str, dict[str, str]]:
+    """Stable IDs so the model can cite exact headlines (E1.. / W1..)."""
+    lines: list[str] = []
+    id_to_title: dict[str, str] = {}
+    ei = 1
+    for n in equity[:max_equity]:
+        hid = f"E{ei}"
+        lines.append(f"[{hid}] ({n.source}) {n.title}")
+        id_to_title[hid] = n.title
+        ei += 1
+    wi = 1
+    for n in world[:max_world]:
+        hid = f"W{wi}"
+        lines.append(f"[{hid}] ({n.source}) {n.title}")
+        id_to_title[hid] = n.title
+        wi += 1
+    return "\n".join(lines), id_to_title

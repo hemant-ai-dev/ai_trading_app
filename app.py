@@ -1,10 +1,11 @@
 import hashlib
 import json
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
-import streamlit as st
 import plotly.graph_objects as go
+import streamlit as st
 
 from config.loader import load_settings
 from data_fetch import get_stock_data
@@ -18,8 +19,17 @@ from intraday_forecast import (
     ensure_ist_index,
     qualitative_scenario_line,
 )
+from level_plan import (
+    default_chart_levels,
+    merge_chart_levels,
+    rule_based_playbook_text,
+    snapshot_levels,
+)
 from market_calendar import format_market_context_for_llm, get_market_status
-from market_intel import format_intel_for_prompt, news_digest_for_cache
+from market_intel import (
+    format_headlines_indexed_for_prompt,
+    news_digest_for_cache,
+)
 from providers.llm_openai import NullLLM
 from providers.registry import (
     build_llm_provider,
@@ -29,6 +39,7 @@ from providers.registry import (
 from signal_engine import get_signal
 
 SETTINGS = load_settings()
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def _build_llm():
@@ -83,6 +94,107 @@ def _redacted_settings_view(cfg: dict) -> dict:
     return out
 
 
+def _normalize_headline_id(raw: object) -> str:
+    s = str(raw or "").strip().upper()
+    return s
+
+
+def _render_intel_tabs(intel: dict, headline_lookup: dict[str, str]) -> None:
+    t_strategy, t_news, t_playbook, t_risk = st.tabs(
+        ["Strategy & chart mapping", "News cited", "Conditional levels playbook", "Risks & limits"]
+    )
+
+    with t_strategy:
+        st.markdown(f"### {intel.get('strategy_title') or 'Strategy overview'}")
+        steps = intel.get("strategy_step_by_step") or []
+        if steps:
+            st.markdown("**Step-by-step (ties to indicator rules)**")
+            for i, step in enumerate(steps, start=1):
+                st.markdown(f"{i}. {step}")
+        tech = intel.get("technical_rules_detail") or intel.get("technical_methods") or []
+        if tech:
+            st.markdown("**Technical checks referenced**")
+            for line in tech:
+                st.markdown(f"- {line}")
+        if intel.get("prediction_mapping"):
+            st.markdown("**How to read the chart lines**")
+            st.markdown(intel["prediction_mapping"])
+
+    with t_news:
+        cited = intel.get("news_items_cited") or []
+        if cited:
+            st.markdown("**Headlines explicitly referenced (IDs → full title)**")
+            for row in cited:
+                if not isinstance(row, dict):
+                    continue
+                hid = _normalize_headline_id(row.get("headline_id"))
+                title = headline_lookup.get(hid)
+                note = row.get("why_it_matters") or row.get("note") or ""
+                if title:
+                    st.markdown(f"- **`[{hid}]`** {title}  \n  ↳ *Why it matters:* {note}")
+                else:
+                    st.markdown(f"- **`[{hid}]`** *(unknown ID — verify prompt)*  \n  ↳ {note}")
+        else:
+            st.caption("No headline citations returned — model may have stayed macro-only.")
+
+        macro = intel.get("news_macro_interpretation") or ""
+        if macro:
+            st.markdown("**Macro / sentiment synthesis**")
+            st.markdown(macro)
+
+    with t_playbook:
+        pb = intel.get("conditional_playbook") or {}
+        if isinstance(pb, dict) and pb:
+            disc = pb.get("disclaimer") or ""
+            if disc:
+                st.caption(disc)
+            bp = pb.get("bullish_path") or pb.get("bullish_confirmation_path") or {}
+            sp = pb.get("bearish_path") or pb.get("bearish_confirmation_path") or {}
+            nz = pb.get("neutral_wait_zone") or {}
+
+            st.markdown("#### Bullish confirmation path *(hypothetical / educational)*")
+            if isinstance(bp, dict) and bp:
+                st.markdown(
+                    f"- **Trigger idea (above ~₹{bp.get('trigger_above_price', '—')}):** "
+                    f"context for upward-follow-through scenarios.\n"
+                    f"- **If that lift never happens:** {bp.get('if_price_never_reaches_above') or bp.get('wait_if_below_that') or '—'}\n"
+                    f"- **Objective reference:** ₹{bp.get('objective_reference_price') or bp.get('objective_near') or '—'}\n"
+                    f"- **Invalidation / reassessment reference:** ₹{bp.get('invalidation_reference_price') or bp.get('invalidation_near') or '—'}\n"
+                    f"- **Derivatives education note:** {bp.get('educational_derivatives_note') or bp.get('option_analogy_note') or '—'}"
+                )
+
+            st.markdown("#### Bearish confirmation path *(hypothetical / educational)*")
+            if isinstance(sp, dict) and sp:
+                st.markdown(
+                    f"- **Trigger idea (below ~₹{sp.get('trigger_below_price', '—')}):** "
+                    f"context for downward-follow-through scenarios.\n"
+                    f"- **If that break never happens:** {sp.get('if_price_never_reaches_below') or sp.get('wait_if_above_that') or '—'}\n"
+                    f"- **Objective reference:** ₹{sp.get('objective_reference_price') or sp.get('objective_near') or '—'}\n"
+                    f"- **Invalidation / reassessment reference:** ₹{sp.get('invalidation_reference_price') or sp.get('invalidation_near') or '—'}\n"
+                    f"- **Derivatives education note:** {sp.get('educational_derivatives_note') or sp.get('option_analogy_note') or '—'}"
+                )
+
+            st.markdown("#### Neutral / wait pocket")
+            if isinstance(nz, dict) and nz:
+                lo = nz.get("lower_bound")
+                hi = nz.get("upper_bound")
+                beh = nz.get("behaviour") or nz.get("behavior") or nz.get("explanation") or ""
+                st.markdown(f"- **Between ~₹{lo} and ~₹{hi}:** {beh}")
+        else:
+            st.info("GenAI playbook empty — see deterministic rule playbook below.")
+
+        st.markdown("---")
+        st.markdown("**How projections relate:**")
+        st.markdown(intel.get("how_the_chart_was_built") or intel.get("prediction_mapping") or "—")
+
+    with t_risk:
+        st.markdown(intel.get("key_risks") or "—")
+        st.markdown("---")
+        st.markdown(intel.get("limitations") or "")
+        tilt = float(intel.get("sentiment_tilt") or 0.0)
+        st.caption(f"Purple overlay bounded tilt parameter: **{tilt:.2f}** (−1 bearish … +1 bullish).")
+
+
 st.set_page_config(
     page_title=SETTINGS.get("app", {}).get("title", "GenAI Trading Tool"),
     page_icon="📈",
@@ -98,9 +210,7 @@ st.caption(
 )
 st.warning(
     "Educational prototype — not financial advice. "
-    "No model can reliably predict prices from headlines or charts. "
-    "The purple line is a qualitative scenario tilt only (bounded math), not a forecast of real OHLC. "
-    "Verify holidays on official NSE circulars."
+    "Green shows downloaded closes (updates with refresh); orange/purple are maths overlays, not promises of future OHLC."
 )
 
 
@@ -159,6 +269,7 @@ def render_board():
 
     result = get_signal(df)
     latest_price = float(df["Close"].iloc[-1])
+    lv_snap = snapshot_levels(df, result)
 
     today = ms.now_ist.date()
     anchor_key = f"nse_anchor_v1|{stock}|{today.isoformat()}"
@@ -170,7 +281,7 @@ def render_board():
     if anchor_key in st.session_state:
         session_anchor = st.session_state[anchor_key]
 
-    actual_cmp, proj_cmp, cmp_note = build_comparison_series(
+    _, proj_cmp, cmp_note = build_comparison_series(
         df_ist,
         float(result["target"]),
         ms,
@@ -179,31 +290,40 @@ def render_board():
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("📌 Stock", stock)
-    col2.metric("💰 Last close (series)", f"₹ {latest_price:.2f}")
-    col3.metric("📢 Signal", result["signal"])
+    col2.metric("💰 Last close", f"₹ {latest_price:.2f}")
+    col3.metric("📢 Rule signal", result["signal"])
     col4.metric("🎯 Confidence", f'{result["confidence"]}%')
 
     col5, col6 = st.columns(2)
     col5.metric(
-        "🛑 Stop / resistance",
+        "🛑 Rule invalidation ref",
         f'₹ {result["stop_loss"]}',
-        help="Stop level derived from ATR; validate against your own risk rules.",
+        help="Derived from ATR + signal direction.",
     )
-    col6.metric("🚀 Rule-based target", f'₹ {result["target"]}')
+    col6.metric("🚀 Rule objective ref", f'₹ {result["target"]}')
 
-    st.info(f"📐 Rule-based factors: {result['reason']}")
+    st.info(f"📐 Rule factors: {result['reason']}")
 
+    headline_block, headline_lookup = format_headlines_indexed_for_prompt(equity_news, world_news)
     summary = build_indicators_summary(df)
     market_ctx = format_market_context_for_llm(ms)
-    prompt_max = int(SETTINGS.get("news", {}).get("yahoo_rss", {}).get("prompt_max_chars") or 4500)
-    news_prompt = format_intel_for_prompt(equity_news, world_news, max_chars=prompt_max)
     digest = news_digest_for_cache(equity_news, world_news)
     digest_hash = hashlib.sha256(digest.encode("utf-8")).hexdigest()[:32]
 
     buy_sell_block = (
         f"Signal {result['signal']} at {result['confidence']}% confidence. "
-        f"Reference stop/resistance: ₹{result['stop_loss']}; reference target: ₹{result['target']}. "
-        f"Rule factors: {result['reason']}."
+        f"Rule invalidation/stop reference: ₹{result['stop_loss']}; rule objective/target reference: ₹{result['target']}. "
+        f"Factors: {result['reason']}."
+    )
+
+    reference_levels_json = json.dumps(
+        {
+            **lv_snap,
+            "signal": result["signal"],
+            "confidence_shown_pct": result["confidence"],
+        },
+        ensure_ascii=False,
+        indent=2,
     )
 
     ai_cache_key = (
@@ -218,7 +338,8 @@ def render_board():
             summary,
             market_ctx,
             buy_sell_block,
-            news_prompt,
+            headline_block,
+            reference_levels_json,
             llm,
             SETTINGS,
         )
@@ -226,28 +347,24 @@ def render_board():
     genai_on = not isinstance(llm, NullLLM)
     intel = _cached_intel_analysis(ai_cache_key, _fetch_intel) if genai_on else None
 
-    st.subheader("🧠 GenAI — strategy, inputs & chart rationale")
+    st.subheader("📘 Detailed GenAI desk + deterministic rule playbook")
+
+    det_pb = rule_based_playbook_text(lv_snap, result["signal"])
+    with st.expander("📍 Deterministic rule playbook (always available)", expanded=False):
+        st.markdown(det_pb)
+
     if intel:
+        _render_intel_tabs(intel, headline_lookup)
         tilt = float(intel.get("sentiment_tilt") or 0.0)
-        with st.container():
-            st.markdown(f"**Summary:** {intel.get('strategy_summary', '—')}")
-            tm = intel.get("technical_methods") or []
-            ds = intel.get("data_sources_used") or []
-            if tm:
-                st.markdown("**Technical angles (aligned with rules):** " + "; ".join(tm))
-            if ds:
-                st.markdown("**Data & feeds used:** " + "; ".join(ds))
-            st.markdown(f"**News / macro (qualitative):** {intel.get('news_macro_interpretation', '—')}")
-            st.markdown(f"**How paths were built:** {intel.get('how_the_chart_was_built', '—')}")
-            st.markdown(f"**Risks:** {intel.get('key_risks', '—')}")
-            st.caption(intel.get("limitations", ""))
-            st.caption(f"Scenario sentiment tilt (bounded overlay input): **{tilt:.2f}** (−1 bearish … +1 bullish).")
+        st.caption(
+            f"GenAI tilt driving purple overlay: **{tilt:.2f}**. Rendered **{datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}**."
+        )
     elif genai_on:
-        st.caption("GenAI analysis unavailable this run (API error or empty response). Charts still show rule-based paths.")
+        st.warning("GenAI JSON unavailable — showing deterministic playbook only.")
+        st.markdown(det_pb)
     else:
         st.caption(
-            "LLM disabled or no API key — set `OPENAI_API_KEY` or `llm.provider` / `config/local.json`. "
-            "See sidebar **Active providers & config**."
+            "LLM disabled — expand deterministic playbook above. Configure `OPENAI_API_KEY` / providers for GenAI tabs."
         )
 
     proj_qual = None
@@ -258,25 +375,32 @@ def render_board():
             float(intel.get("sentiment_tilt") or 0.0),
         )
 
-    st.subheader("📊 Live vs projections (compare paths)")
-    st.caption(cmp_note)
+    chart_levels = merge_chart_levels(
+        intel.get("chart_reference_levels") if intel else None,
+        default_chart_levels(lv_snap, result["signal"]),
+    )[:10]
+
+    st.subheader("📊 Same chart: actual trail + projections + reference guides")
+    st.caption(
+        cmp_note
+        + " • Blue updates when data refreshes (nearest ‘real-time’ trail available via Yahoo interval)."
+    )
 
     fig = go.Figure()
-    if len(actual_cmp) > 0:
-        fig.add_trace(
-            go.Scatter(
-                x=actual_cmp.index,
-                y=actual_cmp.values,
-                name="Live / actual (session)",
-                line=dict(color="#2ecc71", width=2),
-                connectgaps=False,
-            )
+    fig.add_trace(
+        go.Scatter(
+            x=df_ist.index,
+            y=df_ist["Close"],
+            name="Actual closes (historical + latest bar)",
+            line=dict(color="#3498db", width=2),
+            connectgaps=False,
         )
+    )
     fig.add_trace(
         go.Scatter(
             x=proj_cmp.index,
             y=proj_cmp.values,
-            name="Rule projection → target",
+            name="Rule projection → objective",
             line=dict(color="#f39c12", width=2, dash="dash"),
             connectgaps=False,
         )
@@ -286,58 +410,40 @@ def render_board():
             go.Scatter(
                 x=proj_qual.index,
                 y=proj_qual.values,
-                name="GenAI qualitative scenario (news tilt; illustrative)",
+                name="GenAI bounded scenario tilt",
                 line=dict(color="#9b59b6", width=2, dash="dot"),
                 connectgaps=False,
             )
         )
+
+    palette = {"spot": "#ecf0f1", "context": "#1abc9c", "trigger": "#f1c40f", "risk": "#e74c3c", "target": "#2ecc71", "ref": "#bdc3c7"}
+    for row in chart_levels:
+        price = float(row["price"])
+        kind = str(row.get("kind") or "ref")
+        color = palette.get(kind, "#95a5a6")
+        fig.add_hline(
+            y=price,
+            line=dict(color=color, dash="dot", width=1),
+            opacity=0.55,
+            annotation_text=str(row.get("label") or "")[:42],
+            annotation_position="end",
+            annotation_font_size=11,
+            annotation_font_color=color,
+        )
+
     fig.update_layout(
         template="plotly_dark",
-        height=560,
+        height=620,
         xaxis_title="Time (IST)",
         yaxis_title="Price (₹)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1),
-        margin=dict(t=80),
+        legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="right", x=1),
+        margin=dict(t=100),
+        hovermode="x unified",
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("📰 Headlines fed into GenAI (truncated in prompt if long)"):
-        st.markdown("**Symbol / index (Yahoo Finance)**")
-        for n in equity_news[:12]:
-            st.markdown(f"- [{n.source}] {n.title}")
-        st.markdown("**World RSS**")
-        for n in world_news[:12]:
-            st.markdown(f"- [{n.source}] {n.title}")
-
-    st.subheader("📉 Context: recent closes + projections")
-    fig2 = go.Figure()
-    fig2.add_trace(
-        go.Scatter(
-            x=df_ist.index,
-            y=df_ist["Close"],
-            name="Recent closes (window)",
-            line=dict(color="#3498db", width=1),
-        )
-    )
-    fig2.add_trace(
-        go.Scatter(
-            x=proj_cmp.index,
-            y=proj_cmp.values,
-            name="Rule projection",
-            line=dict(color="#f39c12", width=2, dash="dash"),
-        )
-    )
-    if proj_qual is not None and len(proj_qual) > 0:
-        fig2.add_trace(
-            go.Scatter(
-                x=proj_qual.index,
-                y=proj_qual.values,
-                name="GenAI scenario (illustrative)",
-                line=dict(color="#9b59b6", width=2, dash="dot"),
-            )
-        )
-    fig2.update_layout(template="plotly_dark", height=480, xaxis_title="Time (IST)", yaxis_title="Price")
-    st.plotly_chart(fig2, use_container_width=True)
+    with st.expander("📰 Indexed headline catalog (matches GenAI citations)"):
+        st.code(headline_block or "(none)", language="markdown")
 
     st.subheader("📋 Indicator snapshot")
     st.dataframe(df.tail(12), use_container_width=True)
@@ -347,5 +453,5 @@ render_board()
 
 st.caption(
     "Built with Python + Streamlit — holidays: pandas_market_calendars (XNSE). "
-    "Providers: see `config/defaults.json`, optional `config/local.json`, `providers/registry.py`."
+    "Providers: `config/defaults.json`, optional `config/local.json`, `providers/registry.py`."
 )
