@@ -1,11 +1,12 @@
 import hashlib
-import os
+import json
 import time
 from datetime import timedelta
 
 import streamlit as st
 import plotly.graph_objects as go
 
+from config.loader import load_settings
 from data_fetch import get_stock_data
 from genai_reason import (
     build_indicators_summary,
@@ -18,33 +19,43 @@ from intraday_forecast import (
     qualitative_scenario_line,
 )
 from market_calendar import format_market_context_for_llm, get_market_status
-from market_intel import format_intel_for_prompt, gather_intel, news_digest_for_cache
+from market_intel import format_intel_for_prompt, news_digest_for_cache
+from providers.llm_openai import NullLLM
+from providers.registry import (
+    build_llm_provider,
+    build_news_intel_provider,
+    resolve_openai_api_key,
+)
 from signal_engine import get_signal
 
-
-def _openai_key() -> str | None:
-    k = os.getenv("OPENAI_API_KEY")
-    if k:
-        return k
-    try:
-        return str(st.secrets["OPENAI_API_KEY"])
-    except (KeyError, FileNotFoundError, TypeError):
-        return None
+SETTINGS = load_settings()
 
 
-def _load_intel_cached(symbol: str, include_world_rss: bool, ttl_sec: float = 600.0):
-    """Throttle RSS/Yahoo hits across Streamlit reruns."""
+def _build_llm():
+    key = resolve_openai_api_key(SETTINGS)
+    if not key:
+        try:
+            key = str(st.secrets["OPENAI_API_KEY"])
+        except (KeyError, FileNotFoundError, TypeError):
+            key = None
+    return build_llm_provider(SETTINGS, api_key_override=key)
+
+
+def _load_intel_cached(symbol: str, include_world_rss: bool):
+    news_cfg = SETTINGS.get("news", {}).get("yahoo_rss") or {}
+    ttl_sec = float(news_cfg.get("intel_cache_ttl_seconds") or 600)
     key = f"intel_v1|{symbol.upper()}|{include_world_rss}"
     entry = st.session_state.get(key)
     now = time.time()
     if entry and (now - entry["ts"]) < ttl_sec:
         return entry["equity"], entry["world"]
-    equity, world = gather_intel(symbol.strip(), include_world_rss=include_world_rss)
+    provider = build_news_intel_provider(SETTINGS)
+    equity, world = provider.gather(symbol.strip(), include_world_rss)
     st.session_state[key] = {"ts": now, "equity": equity, "world": world}
     return equity, world
 
 
-def _cached_intel_analysis(cache_key: str, fetch_fn) -> dict | None:
+def _cached_intel_analysis(cache_key: str, fetch_fn):
     if st.session_state.get("intel_ai_key") == cache_key and st.session_state.get("intel_ai_val") is not None:
         return st.session_state.intel_ai_val
     data = fetch_fn()
@@ -53,20 +64,53 @@ def _cached_intel_analysis(cache_key: str, fetch_fn) -> dict | None:
     return data
 
 
+def _redacted_settings_view(cfg: dict) -> dict:
+    out = json.loads(json.dumps(cfg))
+
+    def scrub(obj):
+        if isinstance(obj, dict):
+            for k in list(obj.keys()):
+                lk = k.lower()
+                if any(x in lk for x in ("api_key", "secret", "token", "password")):
+                    obj[k] = "***" if obj[k] else obj[k]
+                else:
+                    scrub(obj[k])
+        elif isinstance(obj, list):
+            for item in obj:
+                scrub(item)
+
+    scrub(out)
+    return out
+
+
 st.set_page_config(
-    page_title="GenAI Trading Tool — Intraday (India)",
+    page_title=SETTINGS.get("app", {}).get("title", "GenAI Trading Tool"),
     page_icon="📈",
     layout="wide",
 )
 
-st.title("📈 GenAI Intraday Dashboard (NSE)")
-st.caption("Rule-based signals + GenAI commentary (news/macro) + comparable projection paths (IST).")
+st.title(SETTINGS.get("app", {}).get("title", "📈 GenAI Intraday Dashboard (NSE)"))
+st.caption(
+    SETTINGS.get("app", {}).get(
+        "subtitle",
+        "Rule-based signals + GenAI commentary (news/macro) + comparable projection paths (IST).",
+    )
+)
 st.warning(
     "Educational prototype — not financial advice. "
     "No model can reliably predict prices from headlines or charts. "
     "The purple line is a qualitative scenario tilt only (bounded math), not a forecast of real OHLC. "
     "Verify holidays on official NSE circulars."
 )
+
+
+with st.sidebar.expander("⚙ Active providers & config", expanded=False):
+    st.markdown(
+        "Swap backends via **`config/defaults.json`**, optional **`config/local.json`** (copy from "
+        "`config/local.example.json`), or env: `TRADING_LLM_PROVIDER`, `TRADING_MARKET_DATA_PROVIDER`, "
+        "`TRADING_NEWS_PROVIDER`, `TRADING_CONFIG_PATH`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`."
+    )
+    st.json(_redacted_settings_view(SETTINGS))
 
 
 st.sidebar.header("⚙ Settings")
@@ -86,13 +130,14 @@ auto_refresh = st.sidebar.toggle("Auto-refresh ~60s (intraday)", value=True)
 include_world_rss = st.sidebar.toggle(
     "Include world RSS headlines (macro/war/geopolitical)",
     value=True,
-    help="Fetches public RSS (BBC/NYT world); may add latency.",
+    help="RSS URLs are listed in config → news.yahoo_rss.rss_urls",
 )
 
 
 @st.fragment(run_every=timedelta(seconds=60) if auto_refresh else None)
 def render_board():
     ms = get_market_status()
+    llm = _build_llm()
 
     st.subheader("🇮🇳 NSE session (XNSE calendar)")
     mcol1, mcol2, mcol3 = st.columns(3)
@@ -150,7 +195,8 @@ def render_board():
 
     summary = build_indicators_summary(df)
     market_ctx = format_market_context_for_llm(ms)
-    news_prompt = format_intel_for_prompt(equity_news, world_news)
+    prompt_max = int(SETTINGS.get("news", {}).get("yahoo_rss", {}).get("prompt_max_chars") or 4500)
+    news_prompt = format_intel_for_prompt(equity_news, world_news, max_chars=prompt_max)
     digest = news_digest_for_cache(equity_news, world_news)
     digest_hash = hashlib.sha256(digest.encode("utf-8")).hexdigest()[:32]
 
@@ -160,7 +206,6 @@ def render_board():
         f"Rule factors: {result['reason']}."
     )
 
-    api_key = _openai_key()
     ai_cache_key = (
         f"{stock}|{result['signal']}|{latest_price:.4f}|{ms.phase}|{digest_hash}|{summary[:120]}"
     )
@@ -174,10 +219,12 @@ def render_board():
             market_ctx,
             buy_sell_block,
             news_prompt,
-            api_key,
+            llm,
+            SETTINGS,
         )
 
-    intel = _cached_intel_analysis(ai_cache_key, _fetch_intel) if api_key else None
+    genai_on = not isinstance(llm, NullLLM)
+    intel = _cached_intel_analysis(ai_cache_key, _fetch_intel) if genai_on else None
 
     st.subheader("🧠 GenAI — strategy, inputs & chart rationale")
     if intel:
@@ -195,10 +242,13 @@ def render_board():
             st.markdown(f"**Risks:** {intel.get('key_risks', '—')}")
             st.caption(intel.get("limitations", ""))
             st.caption(f"Scenario sentiment tilt (bounded overlay input): **{tilt:.2f}** (−1 bearish … +1 bullish).")
-    elif api_key:
+    elif genai_on:
         st.caption("GenAI analysis unavailable this run (API error or empty response). Charts still show rule-based paths.")
     else:
-        st.caption("Set `OPENAI_API_KEY` for GenAI strategy box, news-aware tilt, and purple scenario path.")
+        st.caption(
+            "LLM disabled or no API key — set `OPENAI_API_KEY` or `llm.provider` / `config/local.json`. "
+            "See sidebar **Active providers & config**."
+        )
 
     proj_qual = None
     if intel is not None and len(proj_cmp) > 0:
@@ -297,5 +347,5 @@ render_board()
 
 st.caption(
     "Built with Python + Streamlit — holidays: pandas_market_calendars (XNSE). "
-    "Headlines via Yahoo Finance + optional RSS; timing and completeness vary."
+    "Providers: see `config/defaults.json`, optional `config/local.json`, `providers/registry.py`."
 )

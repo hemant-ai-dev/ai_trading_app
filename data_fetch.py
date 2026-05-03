@@ -1,26 +1,26 @@
-import yfinance as yf
 import streamlit as st
 import pandas as pd
 
+from config.loader import load_settings
+from providers.registry import build_market_data_provider
 
-@st.cache_data(ttl=45)
+
+def _cache_ttl_seconds() -> int:
+    try:
+        s = load_settings()
+        return int(s.get("market_data", {}).get("yfinance", {}).get("cache_ttl_seconds", 45))
+    except Exception:
+        return 45
+
+
+_TTL = _cache_ttl_seconds()
+
+
+@st.cache_data(ttl=_TTL)
 def _download_stock(symbol: str, period: str, interval: str) -> pd.DataFrame:
-    """Pure fetch for caching — avoid Streamlit UI calls inside cached functions."""
-    df = yf.download(
-        symbol,
-        period=period,
-        interval=interval,
-        progress=False,
-    )
-
-    if df.empty:
-        return pd.DataFrame()
-
-    df = df.dropna()
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    return df
+    """Pure fetch for caching — implementation comes from config market_data.provider."""
+    provider = build_market_data_provider(load_settings())
+    return provider.download(symbol, period, interval)
 
 
 def get_stock_data(symbol="RELIANCE.NS", period="5d", interval="5m"):

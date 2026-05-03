@@ -1,0 +1,22 @@
+{
+  "_comment": "Copy this file to local.json (gitignored) to override defaults without editing defaults.json.",
+  "llm": {
+    "provider": "openai",
+    "openai": {
+      "model_json": "gpt-4o-mini",
+      "model_chat": "gpt-4o-mini"
+    }
+  },
+  "market_data": {
+    "yfinance": {
+      "cache_ttl_seconds": 30
+    }
+  },
+  "news": {
+    "yahoo_rss": {
+      "rss_urls": [
+        "http://feeds.bbci.co.uk/news/world/rss.xml"
+      ]
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "app": {
+    "title": "GenAI Intraday Dashboard (NSE)",
+    "subtitle": "Rule-based signals + GenAI commentary (news/macro) + comparable projection paths (IST)."
+  },
+  "llm": {
+    "provider": "openai",
+    "openai": {
+      "model_chat": "gpt-4o-mini",
+      "model_json": "gpt-4o-mini",
+      "max_tokens_chat": 220,
+      "temperature_chat": 0.4,
+      "max_tokens_json": 900,
+      "temperature_json": 0.35
+    }
+  },
+  "market_data": {
+    "provider": "yfinance",
+    "yfinance": {
+      "cache_ttl_seconds": 45
+    }
+  },
+  "news": {
+    "provider": "yahoo_rss",
+    "yahoo_rss": {
+      "benchmark_symbols": ["^NSEI"],
+      "max_per_symbol": 6,
+      "rss_urls": [
+        "http://feeds.bbci.co.uk/news/world/rss.xml",
+        "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+      ],
+      "rss_max_items_per_feed": 4,
+      "world_headlines_cap": 10,
+      "intel_cache_ttl_seconds": 600,
+      "prompt_max_chars": 4500
+    }
+  }
+}
