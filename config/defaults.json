@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "GenAI Intraday Dashboard (NSE)",
-    "subtitle": "Rule-based signals + GenAI commentary (news/macro) + comparable projection paths (IST)."
+    "title": "Angad — Indian markets desk",
+    "subtitle": "Rule-based analytics + Angad AI layer (optional LLM). Intraday context in IST — educational only."
   },
   "llm": {
     "provider": "openai",

@@ -182,7 +182,7 @@ def _render_intel_tabs(intel: dict, headline_lookup: dict[str, str]) -> None:
                 beh = nz.get("behaviour") or nz.get("behavior") or nz.get("explanation") or ""
                 st.markdown(f"- **Between ~₹{lo} and ~₹{hi}:** {beh}")
         else:
-            st.info("GenAI playbook empty — see deterministic rule playbook below.")
+            st.info("Angad playbook empty — see deterministic rule section below.")
 
         st.markdown("---")
         st.markdown("**How projections relate:**")
@@ -197,16 +197,16 @@ def _render_intel_tabs(intel: dict, headline_lookup: dict[str, str]) -> None:
 
 
 st.set_page_config(
-    page_title=SETTINGS.get("app", {}).get("title", "GenAI Trading Tool"),
+    page_title=SETTINGS.get("app", {}).get("title", "Angad"),
     page_icon="📈",
     layout="wide",
 )
 
-st.title(SETTINGS.get("app", {}).get("title", "📈 GenAI Intraday Dashboard (NSE)"))
+st.title("📈 " + SETTINGS.get("app", {}).get("title", "Angad — Indian markets desk"))
 st.caption(
     SETTINGS.get("app", {}).get(
         "subtitle",
-        "Rule-based signals + GenAI commentary (news/macro) + comparable projection paths (IST).",
+        "Rule-based analytics + Angad AI layer (optional). IST intraday context — educational only.",
     )
 )
 st.warning(
@@ -370,20 +370,20 @@ def render_board():
     with st.container(border=True):
         st.markdown(det_full)
 
-    st.subheader("🧠 GenAI layer (optional)")
+    st.subheader("🧠 Angad AI layer (optional)")
 
     if intel:
         _render_intel_tabs(intel, headline_lookup)
         tilt = float(intel.get("sentiment_tilt") or 0.0)
         st.caption(
-            f"GenAI tilt driving purple overlay: **{tilt:.2f}**. Rendered **{datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}**."
+            f"Angad sentiment tilt (purple line): **{tilt:.2f}**. Updated **{datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}** IST."
         )
     elif genai_on:
-        st.warning("GenAI JSON unavailable this run — only the rule sections above and chart lines are shown.")
+        st.warning("Angad AI response unavailable this run — rule explanations and chart lines still apply.")
     else:
         st.info(
-            "**GenAI is off** (no `OPENAI_API_KEY` or `llm.provider` = none). "
-            "Add a key in environment or Streamlit secrets to unlock tabs for headline citations and purple scenario line."
+            "**Angad AI is off** (no `OPENAI_API_KEY`, or `llm.provider` = none). "
+            "Add a key in environment or Streamlit secrets to unlock Angad tabs and the purple scenario line."
         )
 
     proj_qual = None
@@ -431,7 +431,7 @@ def render_board():
             go.Scatter(
                 x=proj_qual.index,
                 y=proj_qual.values,
-                name="GenAI bounded scenario tilt",
+                name="Angad scenario tilt (LLM)",
                 line=dict(color="#af7ac5", width=4, dash="dot"),
                 connectgaps=False,
             )
@@ -480,7 +480,7 @@ def render_board():
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("📰 Indexed headline catalog (matches GenAI citations)"):
+    with st.expander("📰 Indexed headline catalog (for Angad citations)"):
         st.code(headline_block or "(none)", language="markdown")
 
     st.subheader("📋 Indicator snapshot")
@@ -490,6 +490,6 @@ def render_board():
 render_board()
 
 st.caption(
-    "Built with Python + Streamlit — holidays: pandas_market_calendars (XNSE). "
+    "Angad — Python + Streamlit. Session calendar: pandas_market_calendars (XNSE). "
     "Providers: `config/defaults.json`, optional `config/local.json`, `providers/registry.py`."
 )

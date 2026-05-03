@@ -1,4 +1,4 @@
-# GenAI Trading Project - Run in Terminal (Windows)
+# Angad — Run in Terminal (Windows)
 
 ## Step 1: Open Terminal
 
@@ -41,6 +41,8 @@ pip install -r requirements.txt
 ```bash
 streamlit run app.py
 ```
+
+*(Angad is the product name for this desk — configure optional AI via `OPENAI_API_KEY`.)*
 
 ---
 

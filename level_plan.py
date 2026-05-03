@@ -136,7 +136,7 @@ def rule_based_playbook_text(lv: dict[str, float], signal: str) -> str:
 
 
 def format_full_deterministic_desk(reason_csv: str, lv: dict[str, float], signal: str) -> str:
-    """Large markdown block for the main UI when GenAI is off or as baseline."""
+    """Large markdown block for the main UI when Angad LLM layer is off or as baseline."""
     parts = [
         "## What each flashing factor means",
         "",

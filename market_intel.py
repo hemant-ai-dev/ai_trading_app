@@ -1,4 +1,4 @@
-"""Headlines and macro context for GenAI (Yahoo Finance + optional RSS). Not investment advice."""
+"""Headlines and macro context for Angad AI (Yahoo Finance + optional RSS). Not investment advice."""
 
 from __future__ import annotations
 
