@@ -43,6 +43,7 @@ def get_signal(df):
 
     else:
         score -= 1
+        reason.append("MACD Negative")
 
     # -----------------------
     # VWAP
@@ -53,6 +54,7 @@ def get_signal(df):
 
     else:
         score -= 1
+        reason.append("Below VWAP")
 
     # -----------------------
     # Final Decision

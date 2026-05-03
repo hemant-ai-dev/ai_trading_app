@@ -4,6 +4,38 @@ from __future__ import annotations
 
 from typing import Any
 
+# Maps each tag emitted by signal_engine to a plain-language explanation.
+FACTOR_HELP: dict[str, str] = {
+    "EMA Bullish": (
+        "The **9-period EMA** sits **above** the **20-period EMA**. "
+        "This rule treats that as *short-term trend above medium-term* — a simple uptrend filter (not a guarantee of future direction)."
+    ),
+    "EMA Bearish": (
+        "The **9-period EMA** sits **below** the **20-period EMA**. "
+        "Short-term average below medium-term → the scorecard leans toward weakness until structure improves."
+    ),
+    "RSI Strong": (
+        "**RSI** is **above 55** on the loaded window. "
+        "The engine reads that as stronger momentum in the lookback; very high RSI can also mean stretched conditions."
+    ),
+    "RSI Weak": (
+        "**RSI** is **below 45** → softer momentum in the lookback; often paired with caution or mean-reversion context depending on price structure."
+    ),
+    "MACD Positive": (
+        "The **MACD line** is **above zero** on this interval → typical reading is momentum favoring the upside versus the signal/zero line (still interval-sensitive)."
+    ),
+    "MACD Negative": (
+        "The **MACD line** is **at or below zero** → momentum oscillator not supporting the bullish side in this bar’s snapshot."
+    ),
+    "Above VWAP": (
+        "Last close is **above session VWAP** (volume-weighted average price for the window Yahoo/ta built). "
+        "Often used intraday as a bull/bear “fair value” reference — above can mean relative strength vs that session average."
+    ),
+    "Below VWAP": (
+        "Last close is **at or below VWAP** → price not demonstrating acceptance above the volume-weighted average in this snapshot."
+    ),
+}
+
 
 def snapshot_levels(df: Any, result: dict[str, Any]) -> dict[str, float]:
     last = df.iloc[-1]
@@ -16,6 +48,43 @@ def snapshot_levels(df: Any, result: dict[str, Any]) -> dict[str, float]:
     }
 
 
+def format_rule_factor_breakdown(reason_csv: str) -> str:
+    """Expand comma-separated tags into readable sections."""
+    tags = [t.strip() for t in reason_csv.split(",") if t.strip()]
+    blocks = []
+    for i, tag in enumerate(tags, start=1):
+        body = FACTOR_HELP.get(tag, f"*No built-in blurb for “{tag}” — it still counted in the score.*")
+        blocks.append(f"#### {i}. {tag}\n\n{body}\n")
+    return "\n---\n".join(blocks) if blocks else "_No factor tags._"
+
+
+def scorecard_how_it_works() -> str:
+    return """
+### How the BUY / SELL / HOLD label is produced
+
+The engine runs **five checks** on the **latest completed bar** in your downloaded data:
+
+| Check | Bullish / +1 side | Bearish / −1 side |
+|-------|--------------------|-------------------|
+| EMA trend | EMA9 > EMA20 | EMA9 < EMA20 |
+| RSI band | RSI > 55 | RSI < 45 |
+| MACD | MACD > 0 | MACD ≤ 0 |
+| vs VWAP | Close > VWAP | Close ≤ VWAP |
+
+**Note:** RSI only moves one step: either “Strong”, “Weak”, or neither (neutral band 45–55 scores 0 on RSI).
+
+**Final label**
+
+- **Score ≥ 3 → BUY**
+- **Score ≤ −2 → SELL**
+- **Else → HOLD**
+
+**Stops & targets** use **ATR** from the same bar: BUY uses stop ≈ close − ATR, target ≈ close + 2×ATR (direction flips for SELL; HOLD uses a symmetric band for display).
+
+*This is a teaching summary of the code path — not investment advice.*
+""".strip()
+
+
 def rule_based_playbook_text(lv: dict[str, float], signal: str) -> str:
     """Plain-language zones anchored to rule stop/target/VWAP."""
     lc = lv["last_close"]
@@ -25,38 +94,63 @@ def rule_based_playbook_text(lv: dict[str, float], signal: str) -> str:
     atr = lv["atr"]
 
     lines = [
-        f"- **Last close (series):** ₹{lc:.2f}",
-        f"- **Rule VWAP (session reference):** ₹{vw:.2f}",
-        f"- **ATR (recent volatility proxy):** ₹{atr:.2f}",
-        f"- **Rule reference stop / invalidation band:** ₹{stp:.2f}",
-        f"- **Rule reference objective:** ₹{tgt:.2f}",
+        "### Reference numbers (from your latest bar + rules)",
         "",
-        "**How this ties to the rule signal:**",
+        f"| Role | ₹ Price |",
+        f"|------|---------|",
+        f"| Last close (series) | **{lc:.2f}** |",
+        f"| VWAP (session reference) | **{vw:.2f}** |",
+        f"| ATR (volatility proxy) | **{atr:.2f}** |",
+        f"| Rule invalidation / stop **reference** | **{stp:.2f}** |",
+        f"| Rule objective / target **reference** | **{tgt:.2f}** |",
+        "",
+        "### How this ties to the rule signal",
     ]
 
     if signal == "BUY":
         lines += [
-            f"- Bullish bias assumes sustained acceptance **above ~₹{max(lc, vw):.2f}** (price/VWAP context).",
-            f"- If price **never holds above** that neighbourhood and slips toward **₹{stp:.2f}**, treat as **wait / reassess** — rule invalidation sits near that zone.",
-            f"- If momentum confirms up, **objective band is anchored toward ₹{tgt:.2f}** (not guaranteed).",
-            "- For index/options-style thinking *education only*: long-volatility analogues often tie **confirmation above** a strike-like pivot and **risk cut** toward the invalidation zone.",
+            f"- **Bullish posture** in this model assumes acceptance **above ~₹{max(lc, vw):.2f}** (last vs VWAP context).",
+            f"- If price **cannot hold above** that zone and **slides toward ₹{stp:.2f}**, treat as **wait / reassess** — that stop reference is where the rule logic would **invalidate** the bull story.",
+            f"- If follow-through holds, the **objective reference** is anchored toward **₹{tgt:.2f}** (math overlay — not a promise of reaching it).",
+            "- **Options-style analogy (education only):** long views often pair **confirmation above** a pivot-like level with **risk** referenced toward the invalidation zone.",
         ]
     elif signal == "SELL":
         lines += [
-            f"- Bearish bias assumes repeated rejection **below ~₹{min(lc, vw):.2f}**.",
-            f"- If price **never breaks / holds below** that context and squeezes toward **₹{stp:.2f}**, treat as **wait / reassess**.",
-            f"- If downside expands, **reference stretch sits toward ₹{tgt:.2f}**.",
-            "- Educational analogues on the short side mirror this with inverted triggers.",
+            f"- **Bearish posture** assumes repeated trade **below ~₹{min(lc, vw):.2f}**.",
+            f"- If price **never breaks / holds below** that idea and **reclaims toward ₹{stp:.2f}**, treat as **wait / reassess**.",
+            f"- If downside extends, **stretch reference** sits toward **₹{tgt:.2f}**.",
+            "- Short-side analogues invert the same logic.",
         ]
     else:
         lines += [
-            f"- Neutral/wait posture between **₹{min(stp, tgt):.2f}** and **₹{max(stp, tgt):.2f}** rule anchors.",
-            "- Confirmation requires a clean hold beyond VWAP **or** a breakdown through it — avoid forcing direction mid-range.",
+            f"- **HOLD / wait** when the score sits between bullish and bearish thresholds — price is often **chopping between ₹{min(stp, tgt):.2f}** and **₹{max(stp, tgt):.2f}** on these references.",
+            "- Wait for a **clean hold beyond VWAP** *or* a **clean failure through VWAP** before forcing a directional story.",
         ]
 
-    lines.append("")
-    lines.append("*Everything above restates indicator-derived references — not a personalized recommendation.*")
+    lines += [
+        "",
+        "---",
+        "*Everything above restates indicator-derived references — not a personalized recommendation.*",
+    ]
     return "\n".join(lines)
+
+
+def format_full_deterministic_desk(reason_csv: str, lv: dict[str, float], signal: str) -> str:
+    """Large markdown block for the main UI when GenAI is off or as baseline."""
+    parts = [
+        "## What each flashing factor means",
+        "",
+        format_rule_factor_breakdown(reason_csv),
+        "",
+        "---",
+        "",
+        scorecard_how_it_works(),
+        "",
+        "---",
+        "",
+        rule_based_playbook_text(lv, signal),
+    ]
+    return "\n".join(parts)
 
 
 def default_chart_levels(lv: dict[str, float], signal: str) -> list[dict[str, Any]]:
@@ -99,3 +193,27 @@ def merge_chart_levels(intel_levels: Any, fallback: list[dict[str, Any]]) -> lis
             seen.add(key)
             out.append(row)
     return sorted(out, key=lambda r: r["price"])
+
+
+def chart_y_range(
+    df_ist: Any,
+    proj_cmp: Any,
+    proj_qual: Any | None,
+    chart_levels: list[dict[str, Any]],
+) -> tuple[float, float]:
+    """Pad Y-axis so price + projections + lines stay readable."""
+    ys: list[float] = []
+    close = df_ist["Close"].astype(float)
+    ys.extend([float(close.min()), float(close.max())])
+    if proj_cmp is not None and len(proj_cmp) > 0:
+        ys.extend([float(proj_cmp.min()), float(proj_cmp.max())])
+    if proj_qual is not None and len(proj_qual) > 0:
+        ys.extend([float(proj_qual.min()), float(proj_qual.max())])
+    for row in chart_levels:
+        ys.append(float(row["price"]))
+    if not ys:
+        return 0.0, 1.0
+    lo, hi = min(ys), max(ys)
+    span = hi - lo
+    pad = max(span * 0.06, hi * 0.0015, 1e-6)
+    return lo - pad, hi + pad

@@ -20,9 +20,10 @@ from intraday_forecast import (
     qualitative_scenario_line,
 )
 from level_plan import (
+    chart_y_range,
     default_chart_levels,
+    format_full_deterministic_desk,
     merge_chart_levels,
-    rule_based_playbook_text,
     snapshot_levels,
 )
 from market_calendar import format_market_context_for_llm, get_market_status
@@ -302,7 +303,23 @@ def render_board():
     )
     col6.metric("🚀 Rule objective ref", f'₹ {result["target"]}')
 
-    st.info(f"📐 Rule factors: {result['reason']}")
+    sig = result["signal"]
+    if sig == "BUY":
+        st.success(
+            f"**Rule posture: BUY** — scorecard ≥ 3. Use **₹{result['stop_loss']:.2f}** as invalidation *reference* and **₹{result['target']:.2f}** as objective *reference* (not advice).",
+            icon="📈",
+        )
+    elif sig == "SELL":
+        st.error(
+            f"**Rule posture: SELL** — scorecard ≤ −2. Invalidation *reference* **₹{result['stop_loss']:.2f}**; stretch *reference* **₹{result['target']:.2f}**.",
+            icon="📉",
+        )
+    else:
+        st.warning(
+            f"**Rule posture: HOLD** — score between buy and sell cuts. Prefer **wait** for a clear break vs VWAP with **₹{result['stop_loss']:.2f}** / **₹{result['target']:.2f}** as band references.",
+            icon="⏸️",
+        )
+    st.caption(f"Raw factor tags: {result['reason']}")
 
     headline_block, headline_lookup = format_headlines_indexed_for_prompt(equity_news, world_news)
     summary = build_indicators_summary(df)
@@ -347,11 +364,13 @@ def render_board():
     genai_on = not isinstance(llm, NullLLM)
     intel = _cached_intel_analysis(ai_cache_key, _fetch_intel) if genai_on else None
 
-    st.subheader("📘 Detailed GenAI desk + deterministic rule playbook")
+    st.subheader("📘 Full rule explanation (always available — read this first)")
 
-    det_pb = rule_based_playbook_text(lv_snap, result["signal"])
-    with st.expander("📍 Deterministic rule playbook (always available)", expanded=False):
-        st.markdown(det_pb)
+    det_full = format_full_deterministic_desk(result["reason"], lv_snap, result["signal"])
+    with st.container(border=True):
+        st.markdown(det_full)
+
+    st.subheader("🧠 GenAI layer (optional)")
 
     if intel:
         _render_intel_tabs(intel, headline_lookup)
@@ -360,11 +379,11 @@ def render_board():
             f"GenAI tilt driving purple overlay: **{tilt:.2f}**. Rendered **{datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}**."
         )
     elif genai_on:
-        st.warning("GenAI JSON unavailable — showing deterministic playbook only.")
-        st.markdown(det_pb)
+        st.warning("GenAI JSON unavailable this run — only the rule sections above and chart lines are shown.")
     else:
-        st.caption(
-            "LLM disabled — expand deterministic playbook above. Configure `OPENAI_API_KEY` / providers for GenAI tabs."
+        st.info(
+            "**GenAI is off** (no `OPENAI_API_KEY` or `llm.provider` = none). "
+            "Add a key in environment or Streamlit secrets to unlock tabs for headline citations and purple scenario line."
         )
 
     proj_qual = None
@@ -380,6 +399,8 @@ def render_board():
         default_chart_levels(lv_snap, result["signal"]),
     )[:10]
 
+    y0, y1 = chart_y_range(df_ist, proj_cmp, proj_qual, chart_levels)
+
     st.subheader("📊 Same chart: actual trail + projections + reference guides")
     st.caption(
         cmp_note
@@ -392,7 +413,7 @@ def render_board():
             x=df_ist.index,
             y=df_ist["Close"],
             name="Actual closes (historical + latest bar)",
-            line=dict(color="#3498db", width=2),
+            line=dict(color="#5dade2", width=3.5),
             connectgaps=False,
         )
     )
@@ -401,7 +422,7 @@ def render_board():
             x=proj_cmp.index,
             y=proj_cmp.values,
             name="Rule projection → objective",
-            line=dict(color="#f39c12", width=2, dash="dash"),
+            line=dict(color="#f5b041", width=5, dash="dash"),
             connectgaps=False,
         )
     )
@@ -411,34 +432,51 @@ def render_board():
                 x=proj_qual.index,
                 y=proj_qual.values,
                 name="GenAI bounded scenario tilt",
-                line=dict(color="#9b59b6", width=2, dash="dot"),
+                line=dict(color="#af7ac5", width=4, dash="dot"),
                 connectgaps=False,
             )
         )
 
-    palette = {"spot": "#ecf0f1", "context": "#1abc9c", "trigger": "#f1c40f", "risk": "#e74c3c", "target": "#2ecc71", "ref": "#bdc3c7"}
+    palette = {"spot": "#ecf0f1", "context": "#48c9b0", "trigger": "#f4d03f", "risk": "#ec7063", "target": "#58d68d", "ref": "#bdc3c7"}
     for row in chart_levels:
         price = float(row["price"])
         kind = str(row.get("kind") or "ref")
         color = palette.get(kind, "#95a5a6")
         fig.add_hline(
             y=price,
-            line=dict(color=color, dash="dot", width=1),
-            opacity=0.55,
-            annotation_text=str(row.get("label") or "")[:42],
+            line=dict(color=color, dash="dash", width=2),
+            opacity=0.85,
+            annotation_text=str(row.get("label") or "")[:48],
             annotation_position="top right",
-            annotation_font_size=11,
+            annotation_font_size=13,
             annotation_font_color=color,
         )
 
     fig.update_layout(
         template="plotly_dark",
-        height=620,
+        height=720,
+        font=dict(size=14, color="#eaeaea"),
         xaxis_title="Time (IST)",
         yaxis_title="Price (₹)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="right", x=1),
-        margin=dict(t=100),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.08,
+            xanchor="right",
+            x=1,
+            font=dict(size=14),
+            bgcolor="rgba(0,0,0,0.35)",
+        ),
+        margin=dict(t=120, l=60, r=40, b=60),
         hovermode="x unified",
+    )
+    fig.update_xaxes(tickfont=dict(size=13), title_font=dict(size=15))
+    fig.update_yaxes(
+        range=[y0, y1],
+        tickformat=".2f",
+        separatethousands=True,
+        tickfont=dict(size=13),
+        title_font=dict(size=15),
     )
     st.plotly_chart(fig, use_container_width=True)
 
