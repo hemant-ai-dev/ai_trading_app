@@ -129,3 +129,21 @@ def snapshot_session_anchor(
     anchor_price: float,
 ) -> dict:
     return {"symbol": stock, "day": day.isoformat(), "anchor_price": anchor_price}
+
+
+def qualitative_scenario_line(
+    proj_rule: pd.Series,
+    rule_target: float,
+    sentiment_tilt: float,
+    max_target_shift_pct: float = 0.03,
+) -> pd.Series:
+    """
+    Same session grid as rule projection; adjusts end price slightly by bounded sentiment.
+    Illustrative only — not a forecast of actual prices.
+    """
+    if len(proj_rule) == 0:
+        return proj_rule
+    anchor = float(proj_rule.iloc[0])
+    tilt = float(np.clip(sentiment_tilt, -1.0, 1.0))
+    adj_target = float(rule_target) * (1.0 + max_target_shift_pct * tilt)
+    return linear_projection(proj_rule.index, anchor, adj_target)
