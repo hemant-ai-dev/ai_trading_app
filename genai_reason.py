@@ -23,6 +23,7 @@ def enrich_with_llm(
     reasons: str,
     indicators_summary: str,
     api_key: str | None,
+    market_context: str | None = None,
 ) -> str | None:
     if not api_key or not api_key.strip():
         return None
@@ -48,7 +49,12 @@ def enrich_with_llm(
                     "content": (
                         f"Rule-based signal: {signal} (confidence score shown as {confidence}%). "
                         f"Factors: {reasons}. Latest metrics: {indicators_summary}. "
-                        "Summarize what this suggests and key risks."
+                        + (
+                            f" Market session context: {market_context}"
+                            if market_context
+                            else ""
+                        )
+                        + " Summarize what this suggests for intraday context and key risks."
                     ),
                 },
             ],

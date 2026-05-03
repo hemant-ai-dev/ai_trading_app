@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=45)
 def _download_stock(symbol: str, period: str, interval: str) -> pd.DataFrame:
     """Pure fetch for caching — avoid Streamlit UI calls inside cached functions."""
     df = yf.download(

@@ -5,3 +5,4 @@ plotly
 yfinance
 ta
 openai>=1.0.0
+pandas-market-calendars>=4.4.0
