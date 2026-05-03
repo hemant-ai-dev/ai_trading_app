@@ -4,3 +4,4 @@ numpy
 plotly
 yfinance
 ta
+openai>=1.0.0

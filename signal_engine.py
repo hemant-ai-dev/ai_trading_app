@@ -70,10 +70,17 @@ def get_signal(df):
         confidence = 50
 
     # -----------------------
-    # Stoploss & Target
+    # Stoploss & Target (directional)
     # -----------------------
-    stop_loss = round(close - atr, 2)
-    target = round(close + (atr * 2), 2)
+    if signal == "BUY":
+        stop_loss = round(close - atr, 2)
+        target = round(close + (atr * 2), 2)
+    elif signal == "SELL":
+        stop_loss = round(close + atr, 2)
+        target = round(close - (atr * 2), 2)
+    else:
+        stop_loss = round(close - atr, 2)
+        target = round(close + atr, 2)
 
     return {
         "signal": signal,

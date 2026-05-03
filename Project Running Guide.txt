@@ -1,0 +1,93 @@
+# GenAI Trading Project - Run in Terminal (Windows)
+
+## Step 1: Open Terminal
+
+Open **Command Prompt** or **PowerShell**
+
+---
+
+## Step 2: Go to Project Folder
+
+```bash
+cd D:\Projects\ai_trading_app
+```
+
+---
+
+## Step 3: Activate Virtual Environment
+
+```bash
+venv\Scripts\activate
+```
+
+After activation you will see:
+
+```text
+(venv)
+```
+
+---
+
+## Step 4: Install Required Packages (First Time Only)
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Step 5: Run Streamlit Project
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## Step 6: Open in Browser
+
+```text
+http://localhost:8501
+```
+
+---
+
+## Step 7: Stop Project
+
+Press:
+
+```text
+Ctrl + C
+```
+
+---
+
+# Daily Use Shortcut
+
+```bash
+cd D:\Projects\ai_trading_app
+venv\Scripts\activate
+streamlit run app.py
+```
+
+---
+
+# Common Errors
+
+## If streamlit not found
+
+```bash
+pip install streamlit
+```
+
+## If module missing
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+# Final Note
+
+Run locally first, test changes, then deploy online.
