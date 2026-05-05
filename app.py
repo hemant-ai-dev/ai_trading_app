@@ -225,7 +225,22 @@ with st.sidebar.expander("⚙ Active providers & config", expanded=False):
 
 
 st.sidebar.header("⚙ Settings")
-stock = st.sidebar.text_input("Enter Stock Symbol", "RELIANCE.NS")
+index_presets = {
+    "Nifty 50": "^NSEI",
+    "Bank Nifty": "^NSEBANK",
+    "Sensex": "^BSESN",
+    "Nifty IT": "^CNXIT",
+    "Nifty Auto": "^CNXAUTO",
+    "Reliance": "RELIANCE.NS",
+    "TCS": "TCS.NS",
+    "HDFC Bank": "HDFCBANK.NS",
+    "Custom (Search)": "custom"
+}
+selected_preset = st.sidebar.selectbox("Select Index / Stock", list(index_presets.keys()))
+if selected_preset == "Custom (Search)":
+    stock = st.sidebar.text_input("Enter Custom Symbol (e.g. INFY.NS)", "INFY.NS")
+else:
+    stock = index_presets[selected_preset]
 period = st.sidebar.selectbox(
     "Select Period",
     ["1d", "5d", "1mo", "3mo"],
