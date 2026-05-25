@@ -1,5 +1,11 @@
 # Angad — Run in Terminal (Windows)
 
+>>> FULL DOCUMENTATION (all details, SQL tables, workflow, APIs):
+>>>   Project_Documentation.txt  <<<  OPEN THIS FILE
+
+Quick spec notes: PART1.txt, PART2.txt
+
+---
 ## Step 1: Open Terminal
 
 Open **Command Prompt** or **PowerShell**
@@ -33,6 +39,46 @@ After activation you will see:
 ```bash
 pip install -r requirements.txt
 ```
+
+Includes **pyodbc** for SQL Server.
+
+---
+
+## Step 4b: SQL Server (first time)
+
+1. Copy `config/local.example.json` → `config/local.json` and set SQL username/password.
+2. (Optional) As **sysadmin**, run `scripts/create_angad_database.sql` in SSMS to create database `AngadTrading`.
+3. Initialize tables + API seed:
+
+```bash
+set PYTHONPATH=D:\Projects\ai_trading_app
+py -3 scripts\setup_database.py
+py -3 scripts\seed_sql_apis.py
+```
+
+If `AngadTrading` is not created yet, the app uses **PortfolioDB** automatically (`fallback_database` in config).
+
+Spec notes: **PART1.txt**, **PART2.txt** (upgrade ideas).
+
+Gen AI API key is stored in SQL only (not in code):
+  UPDATE api_config SET config_value='your-openai-key'
+  WHERE provider_code='openai' AND config_key='api_key';
+Then click "Reload config from SQL" in the sidebar.
+
+Seed APIs first time: py -3 scripts\seed_sql_apis.py
+See scripts\sql_change_api_examples.sql for more SQL examples.
+
+## Data retention (auto-delete after 6 months)
+
+Tables: data_retention_policy, maintenance_purge_log
+Procedure: dbo.usp_purge_data_older_than_months
+
+Change retention:
+  UPDATE dbo.data_retention_policy SET retention_months = 6 WHERE policy_key = 'default';
+
+Manual purge: EXEC dbo.usp_purge_data_older_than_months @months = 6;
+Optional monthly SQL Agent job: scripts\create_purge_sql_agent_job.sql
+App also runs purge automatically once per 24 hours when open.
 
 ---
 

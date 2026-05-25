@@ -1,4 +1,4 @@
-"""Load merged configuration: defaults.json + optional local.json + env overrides."""
+"""Bootstrap from JSON files; all API keys and app settings from SQL Server."""
 
 from __future__ import annotations
 
@@ -30,22 +30,14 @@ def _load_json(path: Path) -> dict:
         return json.load(f)
 
 
-@lru_cache(maxsize=4)
-def load_settings(config_path: str | None = None) -> dict:
+@lru_cache(maxsize=2)
+def load_bootstrap_config(config_path: str | None = None) -> dict:
     """
-    Merge order: config/defaults.json < config/local.json < optional path from TRADING_CONFIG_PATH < TRADING_* flat overrides.
-
-    Env:
-      TRADING_CONFIG_PATH - absolute or relative path to an extra JSON file merged last (for CI/deploy).
-      TRADING_LLM_PROVIDER - e.g. openai
-      TRADING_MARKET_DATA_PROVIDER - e.g. yfinance
-      TRADING_NEWS_PROVIDER - e.g. yahoo_rss
+    Minimal JSON: defaults + local.json (SQL connection only recommended in local).
+    No API secrets required in files when SQL is seeded.
     """
-    defaults_path = _CONFIG_ROOT / "defaults.json"
-    local_path = _CONFIG_ROOT / "local.json"
-
-    cfg = _load_json(defaults_path)
-    cfg = _deep_merge(cfg, _load_json(local_path))
+    cfg = _load_json(_CONFIG_ROOT / "defaults.json")
+    cfg = _deep_merge(cfg, _load_json(_CONFIG_ROOT / "local.json"))
 
     extra = config_path or os.getenv("TRADING_CONFIG_PATH")
     if extra:
@@ -53,6 +45,24 @@ def load_settings(config_path: str | None = None) -> dict:
         if not p.is_absolute():
             p = Path.cwd() / p
         cfg = _deep_merge(cfg, _load_json(p))
+
+    return cfg
+
+
+@lru_cache(maxsize=2)
+def load_settings(config_path: str | None = None) -> dict:
+    """
+    Full settings: bootstrap JSON + SQL api_config + app_settings tables.
+    Change APIs only in SQL after seeding (see scripts/seed_sql_apis.py).
+    """
+    cfg = load_bootstrap_config(config_path)
+    try:
+        from db.sql_config import SqlConfigLoader
+        from db.sql_store import SqlStore
+
+        cfg = SqlConfigLoader(SqlStore(cfg)).merge_into_settings(cfg)
+    except Exception:
+        pass  # deployment without SQL falls back to JSON only
 
     if prov := os.getenv("TRADING_LLM_PROVIDER"):
         cfg.setdefault("llm", {})["provider"] = prov.strip()
@@ -65,5 +75,16 @@ def load_settings(config_path: str | None = None) -> dict:
 
 
 def get_settings() -> dict:
-    """Non-cached alias if you need reload after editing files (restart Streamlit)."""
+    return load_settings()
+
+
+def reload_settings() -> dict:
+    load_bootstrap_config.cache_clear()
+    load_settings.cache_clear()
+    try:
+        from db.sql_config import clear_settings_cache
+
+        clear_settings_cache()
+    except Exception:
+        pass
     return load_settings()

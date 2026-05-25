@@ -1,22 +1,26 @@
 {
-  "_comment": "Copy this file to local.json (gitignored) to override defaults without editing defaults.json.",
+  "_comment": "Copy to config/local.json (gitignored). Set SQL credentials here — never commit real passwords.",
+  "database": {
+    "sql_server": {
+      "enabled": true,
+      "server": "localhost\\SQLEXPRESS",
+      "database": "AngadTrading",
+      "username": "Hemant",
+      "password": "YOUR_PASSWORD_HERE"
+    }
+  },
+  "market_data": {
+    "yfinance": {
+      "cache_ttl_seconds": 25,
+      "auto_adjust": true,
+      "prepost": false
+    }
+  },
   "llm": {
     "provider": "openai",
     "openai": {
       "model_json": "gpt-4o-mini",
       "model_chat": "gpt-4o-mini"
-    }
-  },
-  "market_data": {
-    "yfinance": {
-      "cache_ttl_seconds": 30
-    }
-  },
-  "news": {
-    "yahoo_rss": {
-      "rss_urls": [
-        "http://feeds.bbci.co.uk/news/world/rss.xml"
-      ]
     }
   }
 }

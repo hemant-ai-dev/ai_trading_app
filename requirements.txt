@@ -6,3 +6,4 @@ yfinance
 ta
 openai>=1.0.0
 pandas-market-calendars>=4.4.0
+pyodbc>=5.0.0

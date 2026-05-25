@@ -1,0 +1,473 @@
+================================================================================
+  ANGAD — GEN AI PREDICTION DESK
+  Complete Project Documentation
+================================================================================
+
+Last updated: 2026
+Database: AngadTrading (SQL Server)
+App entry: app.py (Streamlit)
+
+Other docs in this project:
+  - Project Running Guide.txt  → quick start / commands
+  - PART1.txt                  → original upgrade specification
+  - PART2.txt                  → future feature ideas
+
+================================================================================
+1. WHAT THIS PROJECT IS
+================================================================================
+
+Angad is an Indian markets (NSE) intraday monitoring desk. You watch; the
+system predicts. Everything important is stored in SQL Server:
+
+  - Live OHLCV bars (real-time ingest)
+  - Gen AI predictions (signal, path, reasoning in English + Marathi)
+  - Rule-engine reference (math backup)
+  - Full logic snapshot per run (audit trail)
+  - Accuracy vs actual price over time
+
+Educational prototype — not financial advice.
+
+================================================================================
+2. HIGH-LEVEL ARCHITECTURE
+================================================================================
+
+  [Browser: Streamlit app.py]
+           |
+           v
+  +--------+--------+--------+
+  | Market data     | News RSS |
+  | (yfinance)      | (yahoo)  |
+  +--------+--------+--------+
+           |
+           v
+  +------------------+
+  | indicators.py    |  RSI, EMA, MACD, VWAP, ATR
+  +------------------+
+           |
+     +-----+-----+
+     |           |
+     v           v
+  signal_engine   genai_predictor  ← PRIMARY brain (OpenAI)
+  (rule ref)      (own BUY/SELL/HOLD + price path)
+     |           |
+     +-----+-----+
+           v
+  +------------------+
+  | db/sql_store.py  |  All predictions + bars + accuracy
+  +------------------+
+           |
+           v
+  [SQL Server: AngadTrading]
+
+  Configuration (API keys, models, TTL):
+  - db/sql_config.py reads api_providers + api_config + app_settings
+  - Change APIs ONLY in SQL (see section 8)
+
+================================================================================
+3. END-TO-END WORKFLOW (EVERY REFRESH ~60 SECONDS)
+================================================================================
+
+Step 1 — Load config from SQL
+  - config/loader.py merges defaults.json + local.json (SQL login only)
+  - SqlConfigLoader loads api_config and app_settings tables
+  - Sidebar: "Reload config from SQL" clears cache
+
+Step 2 — Market session (IST)
+  - market_calendar.py → XNSE calendar: pre_open, open, post_close, holiday
+
+Step 3 — Fetch OHLCV
+  - data_fetch.py → providers/market_yfinance.py (Yahoo)
+  - Cached 20–45 seconds depending on interval
+
+Step 4 — Indicators
+  - indicators.py adds RSI, EMA9/20/50, MACD, VWAP, ATR, VOL_MA20
+
+Step 5 — Rule reference signal
+  - signal_engine.py weighted score → BUY / SELL / HOLD + confidence %
+  - Used as CONTEXT for Gen AI (AI may disagree)
+
+Step 6 — News (optional)
+  - market_intel.py RSS headlines indexed for Gen AI citations
+
+Step 7 — Gen AI brain (if openai.api_key in SQL)
+  - genai_predictor.py calls OpenAI JSON API
+  - Returns: signal, confidence, target, stop, prediction_path,
+    market_read (EN), market_read_mr (MR), reasoning_steps, news_cited
+  - Builds purple/red projection series on NSE 5m grid
+
+Step 8 — SQL auto-save (every refresh)
+  - market_bars: full OHLCV window
+  - live_bars: today’s close trail
+  - prediction_runs + prediction_points: current prediction line
+  - prediction_logic: indicators + rule snapshot + Gen AI JSON
+  - genai_reasoning: narrative + steps + news (Gen AI runs only)
+  - accuracy_evaluations: when target_time passed, compare to actual
+
+Step 9 — Retention purge (max once per 24h while app open)
+  - Deletes data older than 6 months (configurable in SQL)
+
+Step 10 — UI (3 tabs)
+  - Signal · Logic · Reason — one block EN + MR, tables only (no JSON on screen)
+  - Chart — green live, red prediction, faint red past runs
+  - History & accuracy — audit tables, bars, retention log
+
+================================================================================
+4. SQL SERVER — ALL TABLES AND LINKS
+================================================================================
+
+Database name: AngadTrading (fallback: PortfolioDB if DB not created)
+
+--- CONFIG / API (never deleted by retention purge) ---
+
+api_providers
+  provider_id       INT IDENTITY PK
+  provider_code     NVARCHAR(64) UNIQUE   -- openai, yfinance, yahoo_rss
+  display_name      NVARCHAR(128)
+  provider_type     NVARCHAR(32)          -- llm | market_data | news
+  is_enabled        BIT
+  description       NVARCHAR(512)
+
+api_config
+  config_id         INT IDENTITY PK
+  provider_code     NVARCHAR(64)          -- FK logical to api_providers
+  config_key        NVARCHAR(128)         -- e.g. api_key, model_json
+  config_value      NVARCHAR(MAX)
+  is_secret         BIT
+  UNIQUE(provider_code, config_key)
+
+app_settings
+  setting_key       NVARCHAR(128) PK      -- e.g. llm.provider, app.title
+  setting_value     NVARCHAR(MAX)
+  category          NVARCHAR(64)
+
+--- MARKET DATA ---
+
+market_bars
+  bar_id, stock, bar_time_ist, open/high/low/close, volume, interval_label
+  UNIQUE(stock, bar_time_ist, interval_label)
+  → Auto-upsert every refresh
+
+live_bars
+  stock, bar_time_ist, close_price
+  UNIQUE(stock, bar_time_ist)
+  → Fast lookup for accuracy
+
+--- PREDICTIONS ---
+
+prediction_runs
+  run_id            BIGINT IDENTITY PK
+  stock, run_time_ist, source_type (GENAI | RULE), is_primary, model_name
+  signal, confidence_pct, score, stop_loss, target_price, reason_tags
+  market_phase, period, interval_label, last_close
+
+prediction_points
+  point_id, run_id FK → prediction_runs
+  stock, target_time_ist, predicted_price, sequence_no
+  → Each point on the RED prediction line on chart
+
+prediction_logic
+  logic_id, run_id FK (1:1)
+  indicators_json, rule_snapshot_json, genai_output_json
+  → Full audit: what math + AI saw at prediction time
+
+genai_reasoning
+  run_id FK (1:1), market_read, reasoning_steps_json, news_cited_json
+  risks, limitations
+  → Human-readable Gen AI explanation stored for later review
+
+accuracy_evaluations
+  run_id, point_id FKs
+  predicted_price, actual_price, error_abs, error_pct, within_1pct
+  → Filled when target_time_ist <= now and live/market bar exists
+
+--- RETENTION ---
+
+data_retention_policy
+  policy_key='default', retention_months=6, is_enabled, last_purge_at
+
+maintenance_purge_log
+  ran_at_ist, retention_months, cutoff_ist, total_rows_deleted
+
+Stored procedure:
+  dbo.usp_purge_data_older_than_months @months = 6
+
+TABLE RELATIONSHIP (text diagram):
+
+  api_providers ──< api_config
+  app_settings (standalone)
+
+  prediction_runs ──< prediction_points
+        |── prediction_logic (1:1)
+        |── genai_reasoning (1:1)
+        └──< accuracy_evaluations >── prediction_points
+
+  market_bars, live_bars (standalone, keyed by stock + time)
+
+================================================================================
+5. GEN AI BRAIN (PRIMARY PREDICTION)
+================================================================================
+
+File: genai_predictor.py
+
+The LLM is instructed to output JSON only with:
+  - signal: BUY | SELL | HOLD (independent view)
+  - confidence_pct: 35–92
+  - target_price, stop_loss (INR)
+  - market_read (English paragraph)
+  - market_read_mr (Marathi paragraph)
+  - reasoning_steps[] (English)
+  - reasoning_steps_mr[] (Marathi)
+  - news_cited[] (headline_id from RSS index)
+  - prediction_path[]: {offset_minutes, price} → chart line
+
+Rule engine output is passed as REFERENCE ONLY — AI may disagree.
+
+UI shows combined block (ui/signal_panel.py):
+  - Signal hero: HOLD · प्रतीक्षा (HOLD)
+  - Decision summary table (EN + MR columns)
+  - Detailed explanation (Gen AI or rule narrative from ui/explanations.py)
+  - Step-by-step logic table
+  - Indicators table with meanings
+  - Factor tags table
+
+================================================================================
+6. RULE ENGINE (REFERENCE)
+================================================================================
+
+File: signal_engine.py
+
+Weighted factors on latest bar:
+  - EMA9 vs EMA20 (separation %)
+  - RSI bands (strong / weak / mild / neutral)
+  - MACD vs signal line
+  - VWAP distance %
+  - Volume vs VOL_MA20
+
+Thresholds:
+  - score >= 2.4  → BUY
+  - score <= -2.4 → SELL
+  - else          → HOLD
+
+Dynamic confidence (not fixed 72% / 50%):
+  - HOLD: ~42–70% based on neutrality
+  - BUY/SELL: ~48–94% based on score strength + RSI check
+
+ATR-based stop and target:
+  - BUY:  stop = close - 1.2*ATR, target = close + 2.2*ATR
+  - SELL: inverted
+  - HOLD: symmetric band ±1*ATR
+
+market_regime tag: bullish_trend, bearish_trend, range_bound_vwap, etc.
+
+================================================================================
+7. CHART LEGEND
+================================================================================
+
+File: ui/chart_builder.py
+
+  Green solid     = Live intraday price (today)
+  Red solid bold  = Current prediction line (saved this run)
+  Light red solid = Past saved predictions (compare accuracy later)
+  Grey faint      = Prior sessions history
+
+No dotted lines. Predictions stored in prediction_points for SQL accuracy.
+
+================================================================================
+8. API & SETTINGS — SQL ONLY
+================================================================================
+
+First-time seed:
+  py -3 scripts\seed_sql_apis.py
+
+Change OpenAI key (required for Gen AI):
+  USE AngadTrading;
+  UPDATE dbo.api_config
+  SET config_value = 'sk-your-key-here', updated_at = SYSUTCDATETIME()
+  WHERE provider_code = 'openai' AND config_key = 'api_key';
+
+Change model:
+  UPDATE dbo.api_config SET config_value = 'gpt-4o-mini'
+  WHERE provider_code = 'openai' AND config_key = 'model_json';
+
+View all API settings:
+  SELECT p.provider_code, p.display_name, c.config_key,
+         CASE WHEN c.is_secret=1 THEN '***' ELSE c.config_value END AS val
+  FROM dbo.api_providers p
+  LEFT JOIN dbo.api_config c ON c.provider_code = p.provider_code;
+
+Disable provider:
+  UPDATE dbo.api_providers SET is_enabled = 0 WHERE provider_code = 'openai';
+
+After any SQL change → click "Reload config from SQL" in app sidebar.
+
+config/local.json should ONLY contain SQL connection:
+  server, database, username, password, fallback_database
+
+More examples: scripts\sql_change_api_examples.sql
+
+================================================================================
+9. USEFUL SQL QUERIES (MONITOR & AUDIT)
+================================================================================
+
+-- Latest Gen AI predictions with reasoning
+SELECT TOP 20 r.run_id, r.run_time_ist, r.signal, r.confidence_pct,
+       r.target_price, r.stop_loss, g.market_read
+FROM dbo.prediction_runs r
+LEFT JOIN dbo.genai_reasoning g ON g.run_id = r.run_id
+WHERE r.stock = '^NSEI' AND r.source_type = 'GENAI'
+ORDER BY r.run_id DESC;
+
+-- Logic used for one run
+SELECT l.indicators_json, l.rule_snapshot_json, l.genai_output_json
+FROM dbo.prediction_logic l WHERE l.run_id = 123;
+
+-- Accuracy by source
+SELECT source_type, COUNT(*) n,
+       AVG(error_pct) avg_err,
+       SUM(CASE WHEN within_1pct=1 THEN 1 ELSE 0 END)*100.0/COUNT(*) hit_pct
+FROM dbo.accuracy_evaluations
+WHERE stock = '^NSEI' AND actual_price IS NOT NULL
+GROUP BY source_type;
+
+-- Recent live bars
+SELECT TOP 50 * FROM dbo.market_bars
+WHERE stock = '^NSEI' ORDER BY bar_time_ist DESC;
+
+-- Retention history
+SELECT TOP 10 * FROM dbo.maintenance_purge_log ORDER BY log_id DESC;
+
+================================================================================
+10. DATA RETENTION (6 MONTHS AUTO-DELETE)
+================================================================================
+
+Default: delete transactional rows older than 6 months.
+
+Change period:
+  UPDATE dbo.data_retention_policy SET retention_months = 6 WHERE policy_key='default';
+
+Manual purge:
+  EXEC dbo.usp_purge_data_older_than_months @months = 6;
+
+Optional SQL Agent monthly job:
+  scripts\create_purge_sql_agent_job.sql
+
+App auto-runs purge once per 24 hours while open.
+
+NOT deleted: api_config, api_providers, app_settings
+
+Scripts: scripts\sql_retention_policy.sql
+
+================================================================================
+11. FILE MAP (CODE)
+================================================================================
+
+app.py                  Main Streamlit UI (3 tabs)
+genai_predictor.py      Gen AI brain + build_indicators_summary
+signal_engine.py        Rule reference scoring
+indicators.py           Technical indicators (ta library)
+data_fetch.py           Yahoo fetch + cache
+intraday_forecast.py    Session projection grid (IST 5m)
+market_calendar.py      NSE session phase
+market_intel.py         RSS news for AI
+level_plan.py           Chart Y-range + level snapshot
+
+db/sql_store.py         All SQL tables + save + accuracy + purge
+db/sql_config.py        Load APIs from SQL
+
+ui/signal_panel.py      Combined BUY/SELL/HOLD + EN/MR block
+ui/bilingual.py         Marathi translations
+ui/explanations.py      Detailed rule narratives
+ui/chart_builder.py     Plotly chart
+ui/audit_tables.py      History tables (no JSON on screen)
+ui/styles.py            Hide Deploy menu, mobile CSS
+
+providers/registry.py   Build LLM / market / news from settings
+providers/market_yfinance.py
+providers/llm_openai.py
+providers/news_yahoo_rss.py
+
+config/defaults.json    Structure defaults (no secrets)
+config/local.json       SQL login (gitignored)
+config/loader.py        Bootstrap + merge SQL settings
+
+scripts/setup_database.py     Create DB + tables + seed APIs
+scripts/seed_sql_apis.py      Seed api_config rows
+scripts/create_angad_database.sql
+scripts/sql_change_api_examples.sql
+scripts/sql_retention_policy.sql
+
+requirements.txt        streamlit, pandas, pyodbc, yfinance, ta, openai, ...
+
+================================================================================
+12. INSTALL & RUN
+================================================================================
+
+See Project Running Guide.txt for step-by-step commands.
+
+Quick:
+  cd D:\Projects\ai_trading_app
+  pip install -r requirements.txt
+  py -3 scripts\setup_database.py
+  py -3 scripts\seed_sql_apis.py
+  -- set OpenAI key in SQL (section 8)
+  streamlit run app.py
+  Open http://localhost:8501
+
+================================================================================
+13. UI TABS EXPLAINED
+================================================================================
+
+Tab 1 — Signal · Logic · Reason
+  Single view: signal, confidence, target, stop, full EN+MR explanation,
+  step table, indicators, factors. No raw JSON.
+
+Tab 2 — Chart
+  Live vs prediction. Red line saved each refresh for future accuracy check.
+
+Tab 3 — History & accuracy
+  Table of past runs → pick run # to see logic used.
+  Latest market_bars, accuracy summary, retention purge log.
+
+Sidebar
+  Symbol, period, interval, auto-refresh, Gen AI primary toggle,
+  Reload config from SQL, connection status.
+
+================================================================================
+14. DEPLOYMENT CHECKLIST
+================================================================================
+
+[ ] SQL Server running (localhost\SQLEXPRESS or remote)
+[ ] Database AngadTrading created (scripts/create_angad_database.sql)
+[ ] Tables initialized (py -3 scripts\setup_database.py)
+[ ] APIs seeded (py -3 scripts\seed_sql_apis.py)
+[ ] openai.api_key set in api_config table
+[ ] config/local.json has correct SQL credentials
+[ ] pip install -r requirements.txt
+[ ] streamlit run app.py
+[ ] Sidebar shows "Store connected"
+[ ] Gen AI tab shows detailed EN+MR text (not "API off" message)
+[ ] Chart red line appears; History tab shows runs after 2+ refreshes
+[ ] Optional: SQL Agent job for monthly purge
+
+================================================================================
+15. TROUBLESHOOTING
+================================================================================
+
+Gen AI off:
+  → Set api_key in SQL api_config; Reload config from SQL
+
+Store unavailable:
+  → Check SQL service, local.json credentials, firewall
+
+No chart data:
+  → Check symbol (use ^NSEI, RELIANCE.NS), period/interval combo
+
+Same confidence every time:
+  → Fixed in signal_engine — pull latest code; should vary with score
+
+Streamlit sidebar error in fragment:
+  → Fixed — status uses session_state, not st.sidebar inside fragment
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
