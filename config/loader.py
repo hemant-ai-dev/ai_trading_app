@@ -1,4 +1,4 @@
-"""Bootstrap from JSON files; all API keys and app settings from SQL Server."""
+"""Bootstrap settings from JSON files and environment variables."""
 
 from __future__ import annotations
 
@@ -30,12 +30,22 @@ def _load_json(path: Path) -> dict:
         return json.load(f)
 
 
+def _apply_env_overrides(cfg: dict) -> dict:
+    """Apply environment variable overrides for secrets and providers."""
+    if key := os.getenv("OPENAI_API_KEY"):
+        cfg.setdefault("llm", {}).setdefault("openai", {})["api_key"] = key.strip()
+    if prov := os.getenv("TRADING_LLM_PROVIDER"):
+        cfg.setdefault("llm", {})["provider"] = prov.strip()
+    if prov := os.getenv("TRADING_MARKET_DATA_PROVIDER"):
+        cfg.setdefault("market_data", {})["provider"] = prov.strip()
+    if prov := os.getenv("TRADING_NEWS_PROVIDER"):
+        cfg.setdefault("news", {})["provider"] = prov.strip()
+    return cfg
+
+
 @lru_cache(maxsize=2)
-def load_bootstrap_config(config_path: str | None = None) -> dict:
-    """
-    Minimal JSON: defaults + local.json (SQL connection only recommended in local).
-    No API secrets required in files when SQL is seeded.
-    """
+def load_settings(config_path: str | None = None) -> dict:
+    """Load application settings from defaults.json, local.json, and environment."""
     cfg = _load_json(_CONFIG_ROOT / "defaults.json")
     cfg = _deep_merge(cfg, _load_json(_CONFIG_ROOT / "local.json"))
 
@@ -46,32 +56,7 @@ def load_bootstrap_config(config_path: str | None = None) -> dict:
             p = Path.cwd() / p
         cfg = _deep_merge(cfg, _load_json(p))
 
-    return cfg
-
-
-@lru_cache(maxsize=2)
-def load_settings(config_path: str | None = None) -> dict:
-    """
-    Full settings: bootstrap JSON + SQL api_config + app_settings tables.
-    Change APIs only in SQL after seeding (see scripts/seed_sql_apis.py).
-    """
-    cfg = load_bootstrap_config(config_path)
-    try:
-        from db.sql_config import SqlConfigLoader
-        from db.sql_store import SqlStore
-
-        cfg = SqlConfigLoader(SqlStore(cfg)).merge_into_settings(cfg)
-    except Exception:
-        pass  # deployment without SQL falls back to JSON only
-
-    if prov := os.getenv("TRADING_LLM_PROVIDER"):
-        cfg.setdefault("llm", {})["provider"] = prov.strip()
-    if prov := os.getenv("TRADING_MARKET_DATA_PROVIDER"):
-        cfg.setdefault("market_data", {})["provider"] = prov.strip()
-    if prov := os.getenv("TRADING_NEWS_PROVIDER"):
-        cfg.setdefault("news", {})["provider"] = prov.strip()
-
-    return cfg
+    return _apply_env_overrides(cfg)
 
 
 def get_settings() -> dict:
@@ -79,12 +64,5 @@ def get_settings() -> dict:
 
 
 def reload_settings() -> dict:
-    load_bootstrap_config.cache_clear()
     load_settings.cache_clear()
-    try:
-        from db.sql_config import clear_settings_cache
-
-        clear_settings_cache()
-    except Exception:
-        pass
     return load_settings()

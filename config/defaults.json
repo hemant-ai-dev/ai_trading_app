@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "Angad — Indian markets desk",
-    "subtitle": "Rule-based analytics + Angad AI layer (optional LLM). Intraday context in IST — educational only."
+    "title": "Angad — AI Trading Assistant",
+    "subtitle": "Educational market analysis with explainable AI predictions. Not financial advice."
   },
   "llm": {
     "provider": "openai",
@@ -22,16 +22,8 @@
       "cache_ttl_seconds": 45
     }
   },
-  "database": {
-    "sql_server": {
-      "enabled": true,
-      "server": "localhost\\SQLEXPRESS",
-      "database": "AngadTrading",
-      "fallback_database": "PortfolioDB",
-      "username": "",
-      "password": "",
-      "odbc_driver": "ODBC Driver 17 for SQL Server"
-    }
+  "storage": {
+    "predictions_path": "data/storage/predictions.json"
   },
   "news": {
     "provider": "yahoo_rss",

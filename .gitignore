@@ -5,4 +5,5 @@ venv/
 .env
 .streamlit/secrets.toml
 config/local.json
+data/storage/predictions.json
 predictions.db

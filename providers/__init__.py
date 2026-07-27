@@ -1,13 +1,5 @@
-from providers.registry import (
-    build_llm_provider,
-    build_market_data_provider,
-    build_news_intel_provider,
-    resolve_openai_api_key,
-)
+"""Legacy provider package — news RSS adapter."""
 
-__all__ = [
-    "build_llm_provider",
-    "build_market_data_provider",
-    "build_news_intel_provider",
-    "resolve_openai_api_key",
-]
+from providers.news_yahoo_rss import YahooRssNewsIntel
+
+__all__ = ["YahooRssNewsIntel"]

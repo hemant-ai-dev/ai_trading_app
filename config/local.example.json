@@ -1,26 +1,12 @@
 {
-  "_comment": "Copy to config/local.json (gitignored). Set SQL credentials here — never commit real passwords.",
-  "database": {
-    "sql_server": {
-      "enabled": true,
-      "server": "localhost\\SQLEXPRESS",
-      "database": "AngadTrading",
-      "username": "Hemant",
-      "password": "YOUR_PASSWORD_HERE"
+  "llm": {
+    "openai": {
+      "api_key": ""
     }
   },
   "market_data": {
     "yfinance": {
-      "cache_ttl_seconds": 25,
-      "auto_adjust": true,
-      "prepost": false
-    }
-  },
-  "llm": {
-    "provider": "openai",
-    "openai": {
-      "model_json": "gpt-4o-mini",
-      "model_chat": "gpt-4o-mini"
+      "cache_ttl_seconds": 25
     }
   }
 }
