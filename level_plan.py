@@ -14,6 +14,8 @@ def chart_y_range(
 ) -> tuple[float, float]:
     """Compute padded Y-axis range for price charts."""
     ys: list[float] = []
+    if "Low" in df_ist.columns and "High" in df_ist.columns:
+        ys.extend([float(df_ist["Low"].min()), float(df_ist["High"].max())])
     close = df_ist["Close"].astype(float)
     ys.extend([float(close.min()), float(close.max())])
     if proj is not None and len(proj) > 0:

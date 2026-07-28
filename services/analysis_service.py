@@ -63,7 +63,7 @@ class AnalysisService:
         )
 
         self.history.update_actual_prices(symbol, latest)
-        self.history.save_prediction(symbol, primary)
+        self.history.save_prediction(symbol, primary, market_price=latest)
         explanation = build_explanation(primary, primary.indicator_snapshot)
 
         today = ms.now_ist.date()

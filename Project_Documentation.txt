@@ -1,13 +1,13 @@
 ================================================================================
-  ANGAD — GEN AI PREDICTION DESK
+  ANGAD — AI TRADING TERMINAL
   Complete Project Documentation
 ================================================================================
 
-Last updated: 2026
-Database: AngadTrading (SQL Server)
+Last updated: 2026-07-28
+Storage: local JSON (data/storage/predictions.json) — no database required
 App entry: app.py (Streamlit)
 
-Other docs in this project:
+Related docs:
   - Project Running Guide.txt  → quick start / commands
   - PART1.txt                  → original upgrade specification
   - PART2.txt                  → future feature ideas
@@ -16,14 +16,19 @@ Other docs in this project:
 1. WHAT THIS PROJECT IS
 ================================================================================
 
-Angad is an Indian markets (NSE) intraday monitoring desk. You watch; the
-system predicts. Everything important is stored in SQL Server:
+Angad is an Indian markets (NSE) AI trading analysis terminal. You watch;
+the system predicts and explains. The UI is designed like a modern trading
+desk (Zerodha Kite–style candlestick chart) rather than a simple plot.
 
-  - Live OHLCV bars (real-time ingest)
-  - Gen AI predictions (signal, path, reasoning in English + Marathi)
-  - Rule-engine reference (math backup)
-  - Full logic snapshot per run (audit trail)
-  - Accuracy vs actual price over time
+Core capabilities:
+  - Live OHLCV candlestick charts with zoom, pan, crosshair
+  - Rule-engine + optional Gen AI (OpenAI) predictions
+  - Explainable BUY / SELL / HOLD with beginner-friendly reasons
+  - Technical indicators (EMA, SMA, VWAP, RSI, MACD, Bollinger, ATR, ADX,
+    Volume, Support/Resistance, Fibonacci retracement & extension)
+  - Future prediction curve with confidence bands
+  - Prediction vs reality comparison (Correct / Incorrect)
+  - Full prediction history with accuracy and P/L simulation
 
 Educational prototype — not financial advice.
 
@@ -41,432 +46,404 @@ Educational prototype — not financial advice.
            |
            v
   +------------------+
-  | indicators.py    |  RSI, EMA, MACD, VWAP, ATR
+  | indicators/*     |  RSI, EMA/SMA, MACD, VWAP, ATR, ADX, BB,
+  |                  |  Fibonacci, Support/Resistance, Patterns
   +------------------+
            |
      +-----+-----+
      |           |
      v           v
-  signal_engine   genai_predictor  ← PRIMARY brain (OpenAI)
-  (rule ref)      (own BUY/SELL/HOLD + price path)
+  rule_engine   genai_engine  ← optional OpenAI brain
+  (math)        (BUY/SELL/HOLD + path + narrative)
      |           |
      +-----+-----+
            v
   +------------------+
-  | db/sql_store.py  |  All predictions + bars + accuracy
+  | prediction/      |  history_store.py → local JSON
+  | history_store    |  accuracy.py → metrics
   +------------------+
            |
            v
-  [SQL Server: AngadTrading]
+  +------------------+
+  | charts/ + ui/    |  Kite-style Plotly candlesticks + dashboard
+  +------------------+
 
-  Configuration (API keys, models, TTL):
-  - db/sql_config.py reads api_providers + api_config + app_settings
-  - Change APIs ONLY in SQL (see section 8)
+Configuration:
+  - config/defaults.json + config/local.json (API keys, models)
+  - Sidebar: "Reload settings"
 
 ================================================================================
 3. END-TO-END WORKFLOW (EVERY REFRESH ~60 SECONDS)
 ================================================================================
 
-Step 1 — Load config from SQL
-  - config/loader.py merges defaults.json + local.json (SQL login only)
-  - SqlConfigLoader loads api_config and app_settings tables
-  - Sidebar: "Reload config from SQL" clears cache
+Step 1 — Load settings
+  - config/loader.py merges defaults.json + local.json
+  - Optional OPENAI_API_KEY from env or local.json
 
 Step 2 — Market session (IST)
   - market_calendar.py → XNSE calendar: pre_open, open, post_close, holiday
 
 Step 3 — Fetch OHLCV
-  - data_fetch.py → providers/market_yfinance.py (Yahoo)
-  - Cached 20–45 seconds depending on interval
+  - services/market_service.py → providers/market_yfinance.py (Yahoo)
+  - Cached briefly depending on interval
 
 Step 4 — Indicators
-  - indicators.py adds RSI, EMA9/20/50, MACD, VWAP, ATR, VOL_MA20
+  - indicators/calculator.py applies technicals + Fibonacci + S/R + patterns
 
 Step 5 — Rule reference signal
-  - signal_engine.py weighted score → BUY / SELL / HOLD + confidence %
-  - Used as CONTEXT for Gen AI (AI may disagree)
+  - prediction/rule_engine.py weighted score → BUY / SELL / HOLD + confidence %
+  - Used as context for Gen AI (AI may disagree)
 
 Step 6 — News (optional)
-  - market_intel.py RSS headlines indexed for Gen AI citations
+  - market_intel / news_service RSS headlines for Gen AI citations
 
-Step 7 — Gen AI brain (if openai.api_key in SQL)
-  - genai_predictor.py calls OpenAI JSON API
-  - Returns: signal, confidence, target, stop, prediction_path,
-    market_read (EN), market_read_mr (MR), reasoning_steps, news_cited
-  - Builds purple/red projection series on NSE 5m grid
+Step 7 — Gen AI brain (if enabled + API key)
+  - prediction/genai_engine.py calls OpenAI JSON API
+  - Returns: signal, confidence, target, stop, prediction path, reasons
 
-Step 8 — SQL auto-save (every refresh)
-  - market_bars: full OHLCV window
-  - live_bars: today’s close trail
-  - prediction_runs + prediction_points: current prediction line
-  - prediction_logic: indicators + rule snapshot + Gen AI JSON
-  - genai_reasoning: narrative + steps + news (Gen AI runs only)
-  - accuracy_evaluations: when target_time passed, compare to actual
+Step 8 — Persist history
+  - prediction/history_store.py saves run + projection points to JSON
+  - Backfills actual_price / win / P/L for older predictions
 
-Step 9 — Retention purge (max once per 24h while app open)
-  - Deletes data older than 6 months (configurable in SQL)
-
-Step 10 — UI (3 tabs)
-  - Signal · Logic · Reason — one block EN + MR, tables only (no JSON on screen)
-  - Chart — green live, red prediction, faint red past runs
-  - History & accuracy — audit tables, bars, retention log
+Step 9 — UI (Trading Desk)
+  - Candlestick chart with overlays
+  - AI explanation panel
+  - Compare prediction vs reality
+  - History + accuracy tabs
 
 ================================================================================
-4. SQL SERVER — ALL TABLES AND LINKS
+4. FOLDER STRUCTURE
 ================================================================================
 
-Database name: AngadTrading (fallback: PortfolioDB if DB not created)
+app.py                      Main Streamlit trading terminal UI
+intraday_forecast.py        Session projection grid (IST 5m)
+level_plan.py               Chart Y-range helper
+market_calendar.py          NSE session phase
+market_intel.py             RSS news helpers
+model.py                    Legacy helper (if present)
 
---- CONFIG / API (never deleted by retention purge) ---
+ai/
+  explainer.py              Beginner-friendly explanation blocks
+  llm_openai.py             OpenAI / Null LLM wrappers
+  registry.py               Build LLM provider from settings
 
-api_providers
-  provider_id       INT IDENTITY PK
-  provider_code     NVARCHAR(64) UNIQUE   -- openai, yfinance, yahoo_rss
-  display_name      NVARCHAR(128)
-  provider_type     NVARCHAR(32)          -- llm | market_data | news
-  is_enabled        BIT
-  description       NVARCHAR(512)
+charts/
+  price_chart.py            Kite-style candlestick + indicators + AI overlays
+  themes.py                 Dark / light theme palettes
+  accuracy_dashboard.py     Accuracy analytics charts
 
-api_config
-  config_id         INT IDENTITY PK
-  provider_code     NVARCHAR(64)          -- FK logical to api_providers
-  config_key        NVARCHAR(128)         -- e.g. api_key, model_json
-  config_value      NVARCHAR(MAX)
-  is_secret         BIT
-  UNIQUE(provider_code, config_key)
+config/
+  defaults.json             Structure defaults (no secrets)
+  local.example.json        Example local config
+  local.json                Local secrets (gitignored)
+  loader.py                 Settings merge / reload
 
-app_settings
-  setting_key       NVARCHAR(128) PK      -- e.g. llm.provider, app.title
-  setting_value     NVARCHAR(MAX)
-  category          NVARCHAR(64)
+data/
+  yfinance_provider.py      Market data adapter
+  cache.py                  Fetch cache
+  contracts.py              Data contracts
+  storage/predictions.json  Prediction history (auto-created)
 
---- MARKET DATA ---
+indicators/
+  technical.py              EMA, SMA, RSI, MACD, VWAP, BB, ATR, ADX, volume
+  fibonacci.py              Retracement + extension levels
+  support_resistance.py     Pivot-style S/R
+  patterns.py               Candlestick pattern hints
+  calculator.py             Unified indicator context builder
 
-market_bars
-  bar_id, stock, bar_time_ist, open/high/low/close, volume, interval_label
-  UNIQUE(stock, bar_time_ist, interval_label)
-  → Auto-upsert every refresh
+prediction/
+  models.py                 PredictionResult / PredictionRecord
+  rule_engine.py            Weighted technical scoring
+  genai_engine.py           OpenAI JSON prediction
+  engine.py                 Pipeline orchestrator
+  history_store.py          JSON persistence + projection history
+  accuracy.py               Accuracy / win-rate / P/L metrics
 
-live_bars
-  stock, bar_time_ist, close_price
-  UNIQUE(stock, bar_time_ist)
-  → Fast lookup for accuracy
+providers/                  Market, LLM, news provider adapters
+services/
+  analysis_service.py       End-to-end analyze() orchestration
+  market_service.py         OHLCV fetch
+  news_service.py           News gather
 
---- PREDICTIONS ---
+ui/
+  dashboard.py              Trading desk components
+  styles.py                 Terminal CSS (dark/light)
+  chart_builder.py          Legacy line-chart helper (superseded)
+  signal_panel.py           Legacy bilingual signal block
+  explanations.py           Rule narratives
+  bilingual.py              EN/MR labels
 
-prediction_runs
-  run_id            BIGINT IDENTITY PK
-  stock, run_time_ist, source_type (GENAI | RULE), is_primary, model_name
-  signal, confidence_pct, score, stop_loss, target_price, reason_tags
-  market_phase, period, interval_label, last_close
+utils/
+  logging.py                Logger helper
+  time_utils.py             IST helpers
 
-prediction_points
-  point_id, run_id FK → prediction_runs
-  stock, target_time_ist, predicted_price, sequence_no
-  → Each point on the RED prediction line on chart
+tests/
+  test_indicators.py
+  test_fibonacci.py
+  test_prediction.py
 
-prediction_logic
-  logic_id, run_id FK (1:1)
-  indicators_json, rule_snapshot_json, genai_output_json
-  → Full audit: what math + AI saw at prediction time
-
-genai_reasoning
-  run_id FK (1:1), market_read, reasoning_steps_json, news_cited_json
-  risks, limitations
-  → Human-readable Gen AI explanation stored for later review
-
-accuracy_evaluations
-  run_id, point_id FKs
-  predicted_price, actual_price, error_abs, error_pct, within_1pct
-  → Filled when target_time_ist <= now and live/market bar exists
-
---- RETENTION ---
-
-data_retention_policy
-  policy_key='default', retention_months=6, is_enabled, last_purge_at
-
-maintenance_purge_log
-  ran_at_ist, retention_months, cutoff_ist, total_rows_deleted
-
-Stored procedure:
-  dbo.usp_purge_data_older_than_months @months = 6
-
-TABLE RELATIONSHIP (text diagram):
-
-  api_providers ──< api_config
-  app_settings (standalone)
-
-  prediction_runs ──< prediction_points
-        |── prediction_logic (1:1)
-        |── genai_reasoning (1:1)
-        └──< accuracy_evaluations >── prediction_points
-
-  market_bars, live_bars (standalone, keyed by stock + time)
+requirements.txt            streamlit, pandas, plotly, yfinance, ta, openai, …
 
 ================================================================================
-5. GEN AI BRAIN (PRIMARY PREDICTION)
+5. HOW AI PREDICTION WORKS
 ================================================================================
 
-File: genai_predictor.py
+5.1 Rule engine (always runs)
+  File: prediction/rule_engine.py
 
-The LLM is instructed to output JSON only with:
-  - signal: BUY | SELL | HOLD (independent view)
-  - confidence_pct: 35–92
-  - target_price, stop_loss (INR)
-  - market_read (English paragraph)
-  - market_read_mr (Marathi paragraph)
-  - reasoning_steps[] (English)
-  - reasoning_steps_mr[] (Marathi)
-  - news_cited[] (headline_id from RSS index)
-  - prediction_path[]: {offset_minutes, price} → chart line
+  Weighted factors on the latest bar:
+    - EMA stack (9/20/50)
+    - RSI bands
+    - MACD vs signal
+    - VWAP distance
+    - Volume vs VOL_MA20
+    - Bollinger proximity
+    - ADX trend strength
+    - Fibonacci proximity (61.8% / 50% / 38.2%)
 
-Rule engine output is passed as REFERENCE ONLY — AI may disagree.
+  Thresholds (approx):
+    - score strong positive  → BUY
+    - score strong negative  → SELL
+    - else                   → HOLD
 
-UI shows combined block (ui/signal_panel.py):
-  - Signal hero: HOLD · प्रतीक्षा (HOLD)
-  - Decision summary table (EN + MR columns)
-  - Detailed explanation (Gen AI or rule narrative from ui/explanations.py)
-  - Step-by-step logic table
-  - Indicators table with meanings
-  - Factor tags table
+  Confidence is dynamic (not fixed):
+    - HOLD: ~42–70% based on neutrality
+    - BUY/SELL: ~48–94% based on score strength
 
-================================================================================
-6. RULE ENGINE (REFERENCE)
-================================================================================
+  ATR-based stop and target:
+    - BUY:  stop = close - k*ATR, target = close + m*ATR
+    - SELL: inverted
+    - HOLD: symmetric band
 
-File: signal_engine.py
+5.2 Gen AI engine (optional)
+  File: prediction/genai_engine.py
 
-Weighted factors on latest bar:
-  - EMA9 vs EMA20 (separation %)
-  - RSI bands (strong / weak / mild / neutral)
-  - MACD vs signal line
-  - VWAP distance %
-  - Volume vs VOL_MA20
+  LLM receives indicator summary, rule reference, market session context,
+  and optional news. It returns JSON:
+    signal, confidence, target_price, stop_loss, reasons, prediction_path
 
-Thresholds:
-  - score >= 2.4  → BUY
-  - score <= -2.4 → SELL
-  - else          → HOLD
+  If Gen AI fails or is disabled, the rule result is primary.
 
-Dynamic confidence (not fixed 72% / 50%):
-  - HOLD: ~42–70% based on neutrality
-  - BUY/SELL: ~48–94% based on score strength + RSI check
+5.3 Projection path
+  File: intraday_forecast.py
 
-ATR-based stop and target:
-  - BUY:  stop = close - 1.2*ATR, target = close + 2.2*ATR
-  - SELL: inverted
-  - HOLD: symmetric band ±1*ATR
+  Builds an IST session grid (typically 5m) from the last live candle toward
+  the target price. The chart forces the future line to start exactly at the
+  last candle close and extend only into future timestamps.
 
-market_regime tag: bullish_trend, bearish_trend, range_bound_vwap, etc.
+5.4 Confidence score
+  - Rule: derived from score magnitude + RSI neutrality checks
+  - Gen AI: model-reported confidence, clamped to a sensible range
+  - Chart confidence bands widen when confidence is lower
 
 ================================================================================
-7. CHART LEGEND
+6. CHART RENDERING (KITE-STYLE)
 ================================================================================
 
-File: ui/chart_builder.py
+File: charts/price_chart.py
+Themes: charts/themes.py
 
-  Green solid     = Live intraday price (today)
-  Red solid bold  = Current prediction line (saved this run)
-  Light red solid = Past saved predictions (compare accuracy later)
-  Grey faint      = Prior sessions history
+Visual design inspired by Zerodha Kite / TradingView terminals:
 
-No dotted lines. Predictions stored in prediction_points for SQL accuracy.
+  Historical market data   → OHLC candlesticks (teal up / red down)
+  Live market              → latest candle + live session context
+  AI future prediction     → solid gold/orange line starting at last close
+  Confidence band          → translucent fill around future path
+  Past AI predictions      → faint dotted overlays
+  Buy markers              → green triangle-up
+  Sell markers             → red triangle-down
+  Hold markers             → yellow diamond
+  Pred vs reality          → on-chart annotations (Correct / Incorrect,
+                             predicted price, actual price, difference %)
 
-================================================================================
-8. API & SETTINGS — SQL ONLY
-================================================================================
+Interaction:
+  - Zoom / pan (dragmode=pan, scrollZoom enabled)
+  - Rangeslider on time axis (disabled in compact mode)
+  - Crosshair via hovermode="x unified" + spike lines
+  - Price scale on the RIGHT
+  - Time scale at the BOTTOM
+  - Dark and light themes
+  - Smooth layout transitions (uirevision preserves zoom across refresh)
+  - Responsive heights for mobile / compact mode
 
-First-time seed:
-  py -3 scripts\seed_sql_apis.py
-
-Change OpenAI key (required for Gen AI):
-  USE AngadTrading;
-  UPDATE dbo.api_config
-  SET config_value = 'sk-your-key-here', updated_at = SYSUTCDATETIME()
-  WHERE provider_code = 'openai' AND config_key = 'api_key';
-
-Change model:
-  UPDATE dbo.api_config SET config_value = 'gpt-4o-mini'
-  WHERE provider_code = 'openai' AND config_key = 'model_json';
-
-View all API settings:
-  SELECT p.provider_code, p.display_name, c.config_key,
-         CASE WHEN c.is_secret=1 THEN '***' ELSE c.config_value END AS val
-  FROM dbo.api_providers p
-  LEFT JOIN dbo.api_config c ON c.provider_code = p.provider_code;
-
-Disable provider:
-  UPDATE dbo.api_providers SET is_enabled = 0 WHERE provider_code = 'openai';
-
-After any SQL change → click "Reload config from SQL" in app sidebar.
-
-config/local.json should ONLY contain SQL connection:
-  server, database, username, password, fallback_database
-
-More examples: scripts\sql_change_api_examples.sql
+Indicator toggles (sidebar):
+  EMA, SMA, VWAP, Bollinger Bands, RSI pane, MACD pane, Volume,
+  ATR, ADX, Support & Resistance, Fibonacci Retracement, Fibonacci Extension
 
 ================================================================================
-9. USEFUL SQL QUERIES (MONITOR & AUDIT)
+7. DASHBOARD LAYOUT
 ================================================================================
 
--- Latest Gen AI predictions with reasoning
-SELECT TOP 20 r.run_id, r.run_time_ist, r.signal, r.confidence_pct,
-       r.target_price, r.stop_loss, g.market_read
-FROM dbo.prediction_runs r
-LEFT JOIN dbo.genai_reasoning g ON g.run_id = r.run_id
-WHERE r.stock = '^NSEI' AND r.source_type = 'GENAI'
-ORDER BY r.run_id DESC;
+File: app.py + ui/dashboard.py
 
--- Logic used for one run
-SELECT l.indicators_json, l.rule_snapshot_json, l.genai_output_json
-FROM dbo.prediction_logic l WHERE l.run_id = 123;
+Trading Desk tab (primary):
+  Left:
+    - Live header strip (symbol, IST time, session, price, signal, confidence)
+    - Professional candlestick chart
+    - Predicted / Target / Stop / Range metrics
+    - Compare Prediction vs Reality card
+  Right (AI panel):
+    - Prediction + Confidence
+    - Plain-language reasons
+    - Suggested action
+    - Confidence meter
+    - Risk meter
+    - Market trend / regime
+    - Technical snapshot
+    - Volume analysis
+    - Fibonacci levels
+    - Candlestick patterns
 
--- Accuracy by source
-SELECT source_type, COUNT(*) n,
-       AVG(error_pct) avg_err,
-       SUM(CASE WHEN within_1pct=1 THEN 1 ELSE 0 END)*100.0/COUNT(*) hit_pct
-FROM dbo.accuracy_evaluations
-WHERE stock = '^NSEI' AND actual_price IS NOT NULL
-GROUP BY source_type;
+Prediction History tab:
+  Timestamp, Market Price, AI Prediction, Confidence, Predicted,
+  Actual Outcome, Error %, Correct?, P/L Sim %, Accuracy label
 
--- Recent live bars
-SELECT TOP 50 * FROM dbo.market_bars
-WHERE stock = '^NSEI' ORDER BY bar_time_ist DESC;
-
--- Retention history
-SELECT TOP 10 * FROM dbo.maintenance_purge_log ORDER BY log_id DESC;
-
-================================================================================
-10. DATA RETENTION (6 MONTHS AUTO-DELETE)
-================================================================================
-
-Default: delete transactional rows older than 6 months.
-
-Change period:
-  UPDATE dbo.data_retention_policy SET retention_months = 6 WHERE policy_key='default';
-
-Manual purge:
-  EXEC dbo.usp_purge_data_older_than_months @months = 6;
-
-Optional SQL Agent monthly job:
-  scripts\create_purge_sql_agent_job.sql
-
-App auto-runs purge once per 24 hours while open.
-
-NOT deleted: api_config, api_providers, app_settings
-
-Scripts: scripts\sql_retention_policy.sql
+Accuracy Statistics tab:
+  Accuracy (±1%), Win Rate, Avg Error, Avg Confidence, P/L Simulation
+  + Plotly multi-panel accuracy charts
 
 ================================================================================
-11. FILE MAP (CODE)
+8. PREDICTION VS REALITY
 ================================================================================
 
-app.py                  Main Streamlit UI (3 tabs)
-genai_predictor.py      Gen AI brain + build_indicators_summary
-signal_engine.py        Rule reference scoring
-indicators.py           Technical indicators (ta library)
-data_fetch.py           Yahoo fetch + cache
-intraday_forecast.py    Session projection grid (IST 5m)
-market_calendar.py      NSE session phase
-market_intel.py         RSS news for AI
-level_plan.py           Chart Y-range + level snapshot
+For every evaluated prediction the UI shows:
 
-db/sql_store.py         All SQL tables + save + accuracy + purge
-db/sql_config.py        Load APIs from SQL
+  Prediction:        BUY @ Price X
+  Actual Result:     Price moved to Y
+  Difference:        +2.4%
+  Prediction Status: Correct / Incorrect
 
-ui/signal_panel.py      Combined BUY/SELL/HOLD + EN/MR block
-ui/bilingual.py         Marathi translations
-ui/explanations.py      Detailed rule narratives
-ui/chart_builder.py     Plotly chart
-ui/audit_tables.py      History tables (no JSON on screen)
-ui/styles.py            Hide Deploy menu, mobile CSS
-
-providers/registry.py   Build LLM / market / news from settings
-providers/market_yfinance.py
-providers/llm_openai.py
-providers/news_yahoo_rss.py
-
-config/defaults.json    Structure defaults (no secrets)
-config/local.json       SQL login (gitignored)
-config/loader.py        Bootstrap + merge SQL settings
-
-scripts/setup_database.py     Create DB + tables + seed APIs
-scripts/seed_sql_apis.py      Seed api_config rows
-scripts/create_angad_database.sql
-scripts/sql_change_api_examples.sql
-scripts/sql_retention_policy.sql
-
-requirements.txt        streamlit, pandas, pyodbc, yfinance, ta, openai, ...
+Evaluation rules (history_store.update_actual_prices):
+  - Predictions older than ~5 minutes get actual_price = latest close
+  - BUY wins if actual >= predicted * 0.99
+  - SELL wins if actual <= predicted * 1.01
+  - HOLD wins if error_pct <= 1.0
+  - profit_loss_pct simulates directional P/L
+  - Chart annotations plot the same comparison on candles
 
 ================================================================================
-12. INSTALL & RUN
+9. FIBONACCI ALGORITHM
 ================================================================================
 
-See Project Running Guide.txt for step-by-step commands.
+File: indicators/fibonacci.py
 
-Quick:
+  1. Find swing high / swing low over lookback (default 50 bars)
+  2. Classify trend from close vs midpoint of the swing
+  3. Retracements at 0%, 23.6%, 38.2%, 50%, 61.8%, 78.6%, 100%
+  4. Extensions at 127.2%, 161.8%, 200%
+  5. Nearest support / resistance derived from retracement levels
+  6. fibonacci_signal_contribution() adds score when price is near key levels
+
+================================================================================
+10. TECHNICAL INDICATORS
+================================================================================
+
+File: indicators/technical.py (ta library)
+
+  EMA 9 / 20 / 50, SMA 20 / 50
+  RSI, MACD (+ signal + histogram)
+  VWAP, Volume MA20, Volume ratio
+  Bollinger Bands (upper / mid / lower)
+  ATR, ADX (+ DI+/DI-)
+  Trend direction label from EMA9 vs EMA20
+
+Support/Resistance: indicators/support_resistance.py
+Patterns: indicators/patterns.py
+
+================================================================================
+11. DATA FLOW / LIVE MARKET INTEGRATION
+================================================================================
+
+  yfinance → MarketService.get_ohlcv(symbol, period, interval)
+           → apply_all_indicators(df)
+           → ensure_ist_index(df)
+           → run_prediction_pipeline(...)
+           → PredictionHistoryStore.save_prediction(...)
+           → build_trading_chart(...) / dashboard panels
+
+Live updates:
+  - Streamlit fragment auto-refresh every ~60 seconds (sidebar toggle)
+  - Chart uirevision keeps user zoom/pan across refreshes
+
+Symbols:
+  Presets: Nifty 50 (^NSEI), Bank Nifty, Sensex, Reliance, TCS, Infosys
+  Custom Yahoo tickers supported (e.g. INFY.NS)
+
+================================================================================
+12. API USAGE & CONFIGURATION
+================================================================================
+
+config/local.json example fields:
+  - openai.api_key / OPENAI_API_KEY env
+  - openai.model (e.g. gpt-4o-mini)
+  - app display settings
+
+No SQL Server required for the current modular build.
+(Older docs / PART files may still mention SQL — that path was refactored away.)
+
+================================================================================
+13. INSTALLATION & HOW TO RUN
+================================================================================
+
   cd D:\Projects\ai_trading_app
+  python -m venv venv
+  venv\Scripts\activate
   pip install -r requirements.txt
-  py -3 scripts\setup_database.py
-  py -3 scripts\seed_sql_apis.py
-  -- set OpenAI key in SQL (section 8)
+  copy config\local.example.json config\local.json
+  # optional: set OpenAI API key in local.json or environment
   streamlit run app.py
   Open http://localhost:8501
 
-================================================================================
-13. UI TABS EXPLAINED
-================================================================================
-
-Tab 1 — Signal · Logic · Reason
-  Single view: signal, confidence, target, stop, full EN+MR explanation,
-  step table, indicators, factors. No raw JSON.
-
-Tab 2 — Chart
-  Live vs prediction. Red line saved each refresh for future accuracy check.
-
-Tab 3 — History & accuracy
-  Table of past runs → pick run # to see logic used.
-  Latest market_bars, accuracy summary, retention purge log.
-
-Sidebar
-  Symbol, period, interval, auto-refresh, Gen AI primary toggle,
-  Reload config from SQL, connection status.
+Tests:
+  pytest -q
 
 ================================================================================
-14. DEPLOYMENT CHECKLIST
+14. CODE QUALITY NOTES
 ================================================================================
 
-[ ] SQL Server running (localhost\SQLEXPRESS or remote)
-[ ] Database AngadTrading created (scripts/create_angad_database.sql)
-[ ] Tables initialized (py -3 scripts\setup_database.py)
-[ ] APIs seeded (py -3 scripts\seed_sql_apis.py)
-[ ] openai.api_key set in api_config table
-[ ] config/local.json has correct SQL credentials
-[ ] pip install -r requirements.txt
-[ ] streamlit run app.py
-[ ] Sidebar shows "Store connected"
-[ ] Gen AI tab shows detailed EN+MR text (not "API off" message)
-[ ] Chart red line appears; History tab shows runs after 2+ refreshes
-[ ] Optional: SQL Agent job for monthly purge
+  - Type hints and docstrings on core modules
+  - Modular packages: ai, charts, indicators, prediction, services, ui
+  - Logging via utils/logging.py
+  - History file bounded (~2000 rows)
+  - PEP 8 style preferred; Streamlit UI kept declarative
 
 ================================================================================
-15. TROUBLESHOOTING
+15. KNOWN LIMITATIONS
 ================================================================================
 
-Gen AI off:
-  → Set api_key in SQL api_config; Reload config from SQL
+  - Yahoo Finance delay / gaps can affect intraday candles
+  - Gen AI quality depends on API key, model, and prompt context
+  - Prediction paths are illustrative session projections, not guaranteed prices
+  - P/L simulation is a simplified educational metric (± directional)
+  - Plotly is used instead of native TradingView Lightweight Charts
+    (look/feel is Kite-inspired; not a pixel clone of Kite)
+  - No broker order placement — analysis only
 
-Store unavailable:
-  → Check SQL service, local.json credentials, firewall
+================================================================================
+16. FUTURE IMPROVEMENTS
+================================================================================
 
-No chart data:
-  → Check symbol (use ^NSEI, RELIANCE.NS), period/interval combo
+  - Optional TradingView Lightweight Charts component
+  - WebSocket live ticks (broker / paid data)
+  - Multi-symbol watchlist & alerts
+  - Backtesting harness with walk-forward accuracy
+  - User-defined indicator templates
+  - Export prediction history to CSV
+  - Deeper Marathi bilingual panel (legacy ui/signal_panel.py still available)
 
-Same confidence every time:
-  → Fixed in signal_engine — pull latest code; should vary with score
+================================================================================
+17. CHART LEGEND (QUICK REFERENCE)
+================================================================================
 
-Streamlit sidebar error in fragment:
-  → Fixed — status uses session_state, not st.sidebar inside fragment
+  Teal / green candle   = Close >= Open
+  Red candle            = Close < Open
+  Gold/orange solid     = Current AI future prediction
+  Soft band             = Confidence range around future path
+  Faint dotted lines    = Past saved AI predictions
+  ▲ green               = Buy marker
+  ▼ red                 = Sell marker
+  ◆ yellow              = Hold marker
+  Annotation boxes      = Pred vs reality (Correct / Incorrect)
 
 ================================================================================
 END OF DOCUMENTATION

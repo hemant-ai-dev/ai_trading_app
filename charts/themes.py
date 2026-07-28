@@ -1,0 +1,101 @@
+"""Chart theme presets for dark and light trading terminals."""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+ThemeDict = dict[str, Any]
+
+DARK: ThemeDict = {
+    "name": "dark",
+    "template": "plotly_dark",
+    "paper_bg": "#0b0e11",
+    "plot_bg": "#0b0e11",
+    "grid": "rgba(255,255,255,0.06)",
+    "text": "#d1d4dc",
+    "muted": "#787b86",
+    "candle_up": "#26a69a",
+    "candle_down": "#ef5350",
+    "wick_up": "#26a69a",
+    "wick_down": "#ef5350",
+    "volume_up": "rgba(38,166,154,0.45)",
+    "volume_down": "rgba(239,83,80,0.45)",
+    "live": "#26a69a",
+    "pred_future": "#f0b90b",
+    "pred_band": "rgba(240,185,11,0.15)",
+    "pred_past": "rgba(240,185,11,0.28)",
+    "buy": "#26a69a",
+    "sell": "#ef5350",
+    "hold": "#f0b90b",
+    "ema9": "#2962ff",
+    "ema20": "#ff6d00",
+    "ema50": "#e040fb",
+    "sma20": "#00bcd4",
+    "sma50": "#8d6e63",
+    "vwap": "#ab47bc",
+    "bb": "rgba(33,150,243,0.55)",
+    "fib": "rgba(156,39,176,0.7)",
+    "support": "#2196f3",
+    "resistance": "#ff9800",
+    "rsi": "#7e57c2",
+    "macd": "#26a69a",
+    "macd_signal": "#ef5350",
+    "macd_hist_pos": "rgba(38,166,154,0.55)",
+    "macd_hist_neg": "rgba(239,83,80,0.55)",
+    "atr": "#78909c",
+    "adx": "#42a5f5",
+    "correct": "#26a69a",
+    "incorrect": "#ef5350",
+    "crosshair": "rgba(255,255,255,0.35)",
+    "border": "rgba(255,255,255,0.08)",
+}
+
+LIGHT: ThemeDict = {
+    "name": "light",
+    "template": "plotly_white",
+    "paper_bg": "#ffffff",
+    "plot_bg": "#ffffff",
+    "grid": "rgba(0,0,0,0.06)",
+    "text": "#131722",
+    "muted": "#787b86",
+    "candle_up": "#089981",
+    "candle_down": "#f23645",
+    "wick_up": "#089981",
+    "wick_down": "#f23645",
+    "volume_up": "rgba(8,153,129,0.4)",
+    "volume_down": "rgba(242,54,69,0.4)",
+    "live": "#089981",
+    "pred_future": "#f57c00",
+    "pred_band": "rgba(245,124,0,0.12)",
+    "pred_past": "rgba(245,124,0,0.3)",
+    "buy": "#089981",
+    "sell": "#f23645",
+    "hold": "#f57c00",
+    "ema9": "#2962ff",
+    "ema20": "#ff6d00",
+    "ema50": "#c2185b",
+    "sma20": "#00838f",
+    "sma50": "#6d4c41",
+    "vwap": "#7b1fa2",
+    "bb": "rgba(25,118,210,0.5)",
+    "fib": "rgba(123,31,162,0.65)",
+    "support": "#1565c0",
+    "resistance": "#ef6c00",
+    "rsi": "#5e35b1",
+    "macd": "#089981",
+    "macd_signal": "#f23645",
+    "macd_hist_pos": "rgba(8,153,129,0.5)",
+    "macd_hist_neg": "rgba(242,54,69,0.5)",
+    "atr": "#607d8b",
+    "adx": "#1e88e5",
+    "correct": "#089981",
+    "incorrect": "#f23645",
+    "crosshair": "rgba(0,0,0,0.35)",
+    "border": "rgba(0,0,0,0.08)",
+}
+
+
+def get_theme(name: str = "dark") -> ThemeDict:
+    """Return theme dictionary for dark or light mode."""
+    return LIGHT if str(name).lower() == "light" else DARK
