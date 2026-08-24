@@ -1,4 +1,4 @@
-"""Full analysis orchestration service."""
+"""Full analysis orchestration — AI Trading Analyst entry point."""
 
 from __future__ import annotations
 
@@ -13,14 +13,13 @@ from market_calendar import format_market_context_for_llm, get_market_status
 from market_intel import format_headlines_indexed_for_prompt
 from prediction.engine import run_prediction_pipeline
 from prediction.history_store import PredictionHistoryStore
-from prediction.models import PredictionResult
 from services.market_service import MarketService
 from services.news_service import NewsService
 from utils.time_utils import ensure_ist_index
 
 
 class AnalysisService:
-    """Orchestrate data fetch, indicators, prediction, and history."""
+    """Orchestrate context gathering, adaptive analyst, and persistence."""
 
     def __init__(self, settings: dict) -> None:
         self.settings = settings
@@ -50,7 +49,7 @@ class AnalysisService:
         market_context = format_market_context_for_llm(ms)
 
         llm = build_llm_provider(self.settings) if use_genai else None
-        primary, rule_result, projection = run_prediction_pipeline(
+        primary, rule_result, projection, extras = run_prediction_pipeline(
             symbol=symbol,
             df=df,
             df_ist=df_ist,
@@ -60,6 +59,10 @@ class AnalysisService:
             use_genai=use_genai and llm is not None,
             headline_block=headline_block,
             market_context=market_context,
+            market=self.market,
+            equity_news=equity_news,
+            world_news=world_news,
+            history=self.history,
         )
 
         self.history.update_actual_prices(symbol, latest)
@@ -84,4 +87,13 @@ class AnalysisService:
             "equity_news": equity_news,
             "world_news": world_news,
             "headline_block": headline_block,
+            "analyst": extras.get("analyst"),
+            "indicator_flags": extras.get("indicator_flags"),
+            "scenarios": extras.get("scenarios"),
+            "report": extras.get("report"),
+            "factors": extras.get("factors"),
+            "news_impacts": extras.get("news_impacts"),
+            "regime": extras.get("regime"),
+            "risk_plan": (primary.raw or {}).get("risk_plan"),
+            "agent_trace": (primary.raw or {}).get("agent_trace"),
         }
