@@ -167,6 +167,8 @@ def build_trading_chart(
     prediction_end: datetime | None = None,
     comparison_records: list[dict[str, Any]] | None = None,
     show_rsi: bool | None = None,
+    scenario_series: dict[str, pd.Series] | None = None,
+    news_markers: list[dict[str, Any]] | None = None,
 ) -> go.Figure:
     """
     Build a professional multi-pane candlestick trading chart.
@@ -383,6 +385,40 @@ def build_trading_chart(
                     col=1,
                 )
 
+    # --- Multi-scenario paths (bull / base / bear) ---
+    scenario_styles = {
+        "bullish": dict(color="#26a69a", dash="dot", width=1.6),
+        "base": dict(color=theme["pred_future"], dash="solid", width=3),
+        "bearish": dict(color="#ef5350", dash="dot", width=1.6),
+        "neutral": dict(color=theme["muted"], dash="dash", width=1.3),
+    }
+    if scenario_series:
+        for name, series in scenario_series.items():
+            if series is None or len(series) == 0:
+                continue
+            styled = scenario_styles.get(name, dict(color=theme["muted"], dash="dot", width=1.2))
+            # Prefer explicit base series as current_pred when provided
+            if name == "base" and (current_pred is None or len(current_pred) == 0):
+                current_pred = series
+            if name == "base":
+                continue  # drawn as main AI prediction below
+            fut = _future_projection_from_last(df_ist, series)
+            if fut is None or len(fut) == 0:
+                continue
+            fig.add_trace(
+                go.Scatter(
+                    x=fut.index,
+                    y=fut.values,
+                    name=f"{name.title()} scenario",
+                    mode="lines",
+                    line=dict(color=styled["color"], width=styled["width"], dash=styled["dash"]),
+                    hovertemplate=f"{name.title()}: ₹%{{y:.2f}}<extra></extra>",
+                    opacity=0.85,
+                ),
+                row=price_row,
+                col=1,
+            )
+
     # --- Future prediction + confidence bands ---
     proj = _future_projection_from_last(df_ist, current_pred)
     if proj is not None and len(proj) > 0:
@@ -488,6 +524,38 @@ def build_trading_chart(
     _add_markers(buy_signals, "Buy", "triangle-up", theme["buy"])
     _add_markers(sell_signals, "Sell", "triangle-down", theme["sell"])
     _add_markers(hold_signals, "Hold", "diamond", theme["hold"])
+
+    # --- News event markers ---
+    if news_markers:
+        xs, ys, texts, colors = [], [], [], []
+        for m in news_markers[:8]:
+            ts = m.get("time") or (df_ist.index[-1] if len(df_ist) else None)
+            px = m.get("price") or (float(df_ist["Close"].iloc[-1]) if len(df_ist) else None)
+            if ts is None or px is None:
+                continue
+            impact = str(m.get("impact") or "neutral")
+            xs.append(ts)
+            ys.append(float(px) * (1.004 if impact == "bullish" else 0.996))
+            texts.append((m.get("headline") or "News")[:60])
+            colors.append(
+                theme["buy"] if impact == "bullish" else (
+                    theme["sell"] if impact == "bearish" else theme["hold"]
+                )
+            )
+        if xs:
+            fig.add_trace(
+                go.Scatter(
+                    x=xs,
+                    y=ys,
+                    mode="markers",
+                    name="News",
+                    marker=dict(symbol="diamond-open", size=11, color=colors, line=dict(width=1.5)),
+                    text=texts,
+                    hovertemplate="%{text}<extra>News</extra>",
+                ),
+                row=price_row,
+                col=1,
+            )
 
     # --- Compare prediction vs reality annotations ---
     if comparison_records:

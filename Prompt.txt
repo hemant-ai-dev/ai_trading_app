@@ -1,0 +1,156 @@
+# Project Goal: Build an Agentic AI Trading Assistant
+
+I do not want a simple AI prediction model or a rule-based trading bot.
+
+I want to build an Agentic AI Trading Assistant that can independently analyze the market, decide which information is important, choose the appropriate analysis techniques, and generate a detailed prediction with explanations.
+
+The AI should behave like an experienced trader who performs research before making a decision.
+
+## Core Requirements
+
+The AI should work autonomously by following these steps:
+
+### 1. Market Research Agent
+Automatically collect and analyze:
+- Live market data
+- Historical OHLCV data
+- Market indices
+- Volume
+- Options chain
+- Open interest
+- Institutional activity
+- Sector performance
+- Global market trends
+- Economic calendar
+- Volatility (VIX)
+
+### 2. News Intelligence Agent
+Automatically gather and analyze:
+- Breaking news
+- Company announcements
+- Earnings reports
+- Economic events
+- Government policies
+- Global news
+- Social sentiment (if available)
+
+The AI should determine whether the news is:
+- Bullish
+- Bearish
+- Neutral
+
+It should estimate the likely market impact and assign a confidence score.
+
+### 3. Technical Analysis Agent
+The AI should automatically determine which indicators are relevant for the current market.
+
+Possible indicators include:
+- RSI
+- MACD
+- EMA
+- SMA
+- VWAP
+- Bollinger Bands
+- ATR
+- ADX
+- Volume Profile
+- Support & Resistance
+- Fibonacci Retracement
+- Fibonacci Extension
+
+The AI should decide which indicators matter most instead of using all of them equally.
+
+### 4. Pattern Recognition Agent
+Automatically detect:
+- Head & Shoulders
+- Double Top
+- Double Bottom
+- Triangle
+- Flag
+- Pennant
+- Cup & Handle
+- Wedge
+- Harmonic patterns
+- Candlestick patterns
+
+### 5. Decision Agent
+After collecting all information, the AI should:
+
+- Evaluate all available evidence.
+- Assign weights to different signals.
+- Resolve conflicting signals.
+- Estimate probabilities for bullish, bearish, and sideways scenarios.
+- Generate a Buy, Sell, or Hold recommendation.
+- Explain why that decision was made.
+
+The decision should not rely on fixed rules. It should be based on the current market context.
+
+### 6. Risk Management Agent
+Automatically calculate:
+- Risk level
+- Suggested stop loss
+- Suggested target prices
+- Risk/Reward ratio
+- Position sizing recommendations
+
+### 7. Explainable AI Agent
+Every prediction must include:
+- Decision
+- Confidence score
+- Supporting evidence
+- Conflicting evidence
+- Risk factors
+- Market summary
+- Alternative scenarios
+
+The explanation should be written in simple language for beginners.
+
+### 8. Learning and Evaluation Agent
+Track every prediction by recording:
+- Prediction time
+- Predicted direction
+- Actual market outcome
+- Prediction accuracy
+- Error metrics
+
+Generate reports that show which strategies perform best over time.
+
+### 9. Interactive Dashboard
+Create a professional dashboard with:
+- Live candlestick chart
+- AI prediction overlay
+- Historical predictions
+- News panel
+- Technical indicators
+- Confidence meter
+- Risk meter
+- Prediction history
+- Explanation panel
+
+### 10. Modular Multi-Agent Architecture
+Design the system so each agent is an independent module.
+
+Example:
+
+- Market Data Agent
+- News Agent
+- Technical Analysis Agent
+- Pattern Recognition Agent
+- Sentiment Agent
+- Risk Management Agent
+- Decision Agent
+- Learning Agent
+- Visualization Agent
+
+A central Orchestrator Agent should coordinate all of these agents and combine their outputs into a final recommendation.
+
+## Important Principles
+
+- The AI should not blindly follow one strategy.
+- It should decide which analysis methods are most relevant based on the current market conditions.
+- It should explain every decision clearly.
+- The system should be modular, scalable, and easy to extend with new agents in the future.
+
+## Ultimate Goal
+
+Build an Agentic AI Trading Assistant that behaves like a team of professional market analysts working together. The AI should autonomously gather information, reason about market conditions, select the most appropriate analysis methods, evaluate risks, and provide transparent, probability-based trading insights rather than simple price predictions.
