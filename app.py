@@ -16,6 +16,8 @@ from prediction.history_store import PredictionHistoryStore
 from services.analysis_service import AnalysisService
 from ui.dashboard import (
     collect_indicator_flags,
+    merge_auto_indicators,
+    render_agent_trace,
     render_ai_explanation_panel,
     render_accuracy_section,
     render_compare_card,
@@ -23,8 +25,11 @@ from ui.dashboard import (
     render_fibonacci_panel,
     render_indicator_snapshot,
     render_main_chart,
+    render_news_panel,
     render_prediction_history,
     render_risk_meter,
+    render_risk_plan_panel,
+    render_scenarios_panel,
     render_top_bar,
     render_volume_analysis,
 )
@@ -80,15 +85,20 @@ if use_genai and not api_key:
     st.sidebar.warning("Set OPENAI_API_KEY in config/local.json or environment.")
 
 indicator_flags = collect_indicator_flags(sidebar=True)
+auto_indicators = st.sidebar.toggle(
+    "Auto-select indicators (regime)",
+    value=True,
+    help="Let the Technical Analysis Agent emphasize tools that fit the current market regime.",
+)
 
 st.sidebar.divider()
 st.sidebar.caption("Storage: local JSON · Educational use only — not financial advice")
 if st.session_state.get("settings_reloaded"):
     st.sidebar.success("Settings reloaded")
 
-st.markdown('<div class="terminal-title">Angad — AI Trading Terminal</div>', unsafe_allow_html=True)
+st.markdown('<div class="terminal-title">Angad — Agentic AI Trading Assistant</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="terminal-sub">Live candles · AI prediction path · Indicators · Explainable signals</div>',
+    '<div class="terminal-sub">Multi-agent research · Adaptive techniques · Risk · Explainable predictions</div>',
     unsafe_allow_html=True,
 )
 
@@ -119,6 +129,13 @@ def render_dashboard() -> None:
     ctx = primary.indicator_snapshot or {}
     fib = ctx.get("fibonacci")
     sr = ctx.get("support_resistance")
+    scenarios = result.get("scenarios") or []
+    news_impacts = result.get("news_impacts") or (primary.raw or {}).get("news_impacts")
+    risk_plan = (primary.raw or {}).get("risk_plan")
+    agent_trace = (primary.raw or {}).get("agent_trace")
+    chart_flags = merge_auto_indicators(
+        indicator_flags, result.get("indicator_flags"), use_auto=auto_indicators
+    )
 
     render_top_bar(ms, latest, primary, stock)
 
@@ -143,7 +160,8 @@ def render_dashboard() -> None:
                 today=today,
                 mobile=st.session_state.get("mobile_mode", False),
                 theme_name=theme_name,
-                indicators=indicator_flags,
+                indicators=chart_flags,
+                scenarios=scenarios,
             )
 
             m1, m2, m3, m4 = st.columns(4)
@@ -154,21 +172,35 @@ def render_dashboard() -> None:
 
             latest_eval = HISTORY.latest_evaluated(stock)
             render_compare_card(primary, latest, latest_eval)
+            render_scenarios_panel(scenarios)
+            render_agent_trace(agent_trace)
 
         with right:
             render_ai_explanation_panel(primary, explanation)
             render_confidence_meter(primary.confidence, primary.signal)
             atr = float(ctx.get("atr") or 0)
             render_risk_meter(primary.risk_level, atr, latest)
+            render_risk_plan_panel(risk_plan, primary)
             st.markdown("##### Market Trend")
             st.write(f"**{(ctx.get('trend_dir') or primary.trend).title()}** · Regime: `{primary.market_regime}`")
+            render_news_panel(news_impacts, result.get("equity_news"))
             render_indicator_snapshot(ctx)
             render_volume_analysis(ctx)
             render_fibonacci_panel(fib)
-            if ctx.get("patterns"):
-                st.markdown("##### Candlestick Patterns")
-                for p in ctx["patterns"]:
-                    st.markdown(f"• {p}")
+            candle_pats = (primary.raw or {}).get("candle_patterns") or ctx.get("patterns") or []
+            chart_pats = (primary.raw or {}).get("chart_patterns") or []
+            if candle_pats or chart_pats:
+                st.markdown("##### Pattern Recognition")
+                for p in candle_pats[:6]:
+                    if isinstance(p, dict):
+                        st.markdown(f"• {p.get('name')} — {p.get('reason', '')}")
+                    else:
+                        st.markdown(f"• {p}")
+                for p in chart_pats[:6]:
+                    if isinstance(p, dict):
+                        st.markdown(f"• {p.get('name')} — {p.get('reason', '')}")
+                    else:
+                        st.markdown(f"• {p}")
 
     with tab_history:
         st.markdown("#### Prediction History")

@@ -68,7 +68,7 @@ def render_ai_explanation_panel(primary: PredictionResult, explanation: dict) ->
         """,
         unsafe_allow_html=True,
     )
-    st.markdown("**Reason**")
+    st.markdown("**Supporting evidence**")
     reasons = explanation.get("reasons") or primary.reasons_simple or primary.reasons
     if reasons:
         for r in reasons:
@@ -76,15 +76,134 @@ def render_ai_explanation_panel(primary: PredictionResult, explanation: dict) ->
     else:
         st.caption("No detailed reasons available for this run.")
 
+    rejected = explanation.get("rejected_signals") or (primary.raw or {}).get("rejected_signals") or []
+    if rejected:
+        with st.expander("Conflicting / de-emphasized signals", expanded=False):
+            for r in rejected[:8]:
+                st.markdown(f"• {r}")
+
     st.markdown("**Suggested action**")
     st.info(explanation.get("suggested_action", "Watch the market and manage risk."))
 
     st.markdown("**Trend**")
     st.write(explanation.get("trend_summary", primary.trend.title()))
+    if explanation.get("regime") or primary.market_regime:
+        st.caption(f"Regime: `{(explanation.get('regime') or primary.market_regime)}`")
 
-    if primary.source == "GENAI" and primary.raw.get("market_read"):
+    preferred = explanation.get("preferred_techniques") or (primary.raw or {}).get("preferred_techniques") or []
+    if preferred:
+        st.caption("Techniques emphasized: " + ", ".join(preferred[:8]))
+
+    md = explanation.get("report_markdown") or (primary.raw or {}).get("report_markdown")
+    if md:
+        with st.expander("Full analyst report", expanded=False):
+            st.markdown(md)
+
+    if primary.raw.get("market_read") or (
+        primary.source and "GENAI" in str(primary.source) and primary.raw.get("genai")
+    ):
         with st.expander("Full AI market read", expanded=False):
-            st.markdown(primary.raw["market_read"])
+            st.markdown(primary.raw.get("market_read") or str(primary.raw.get("genai")))
+
+
+def render_news_panel(news_impacts: list | None, equity_news: list | None = None) -> None:
+    """News intelligence panel with bullish/bearish/neutral impact."""
+    st.markdown("##### News Intelligence")
+    items = news_impacts or []
+    if not items and equity_news:
+        st.caption("Raw headlines loaded — impact scoring unavailable this run.")
+        for h in equity_news[:6]:
+            title = h.get("title") if isinstance(h, dict) else getattr(h, "title", str(h))
+            st.markdown(f"• {title}")
+        return
+    if not items:
+        st.caption("No recent headlines scored.")
+        return
+    for item in items[:8]:
+        if hasattr(item, "to_dict"):
+            d = item.to_dict()
+        elif isinstance(item, dict):
+            d = item
+        else:
+            continue
+        impact = d.get("impact", "neutral")
+        color = SIGNAL_COLORS["BUY"] if impact == "bullish" else (
+            SIGNAL_COLORS["SELL"] if impact == "bearish" else SIGNAL_COLORS["HOLD"]
+        )
+        st.markdown(
+            f"<span style='color:{color};font-weight:600'>{impact.upper()}</span> "
+            f"({d.get('strength', 0):.0%}) — {d.get('headline', '')[:110]}",
+            unsafe_allow_html=True,
+        )
+
+
+def render_risk_plan_panel(risk_plan: dict | None, primary: PredictionResult) -> None:
+    """Risk management: R:R, stops, position sizing."""
+    st.markdown("##### Risk Management")
+    plan = risk_plan or (primary.raw or {}).get("risk_plan") or {}
+    if not plan:
+        st.caption(f"Risk level: {primary.risk_level}")
+        return
+    c1, c2, c3 = st.columns(3)
+    c1.metric("R:R", f"1:{plan.get('risk_reward_ratio', 0)}")
+    c2.metric("Position", f"{plan.get('position_size_pct', 0):.1f}%")
+    c3.metric("Risk/trade", f"{plan.get('risk_per_trade_pct', 0):.2f}%")
+    for note in (plan.get("notes") or [])[:3]:
+        st.caption(note)
+
+
+def render_scenarios_panel(scenarios: list | None) -> None:
+    """Bullish / base / bearish probability scenarios."""
+    st.markdown("##### Alternative Scenarios")
+    if not scenarios:
+        st.caption("No scenario paths this run.")
+        return
+    rows = []
+    for s in scenarios:
+        if hasattr(s, "to_dict"):
+            d = s.to_dict()
+        elif isinstance(s, dict):
+            d = s
+        else:
+            continue
+        rows.append(
+            {
+                "Scenario": str(d.get("name", "")).title(),
+                "Target": f"₹{float(d.get('target_price', 0)):,.2f}",
+                "Probability": f"{float(d.get('probability', 0)) * 100:.0f}%",
+                "Summary": d.get("summary", ""),
+            }
+        )
+    if rows:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
+def render_agent_trace(trace: list | None) -> None:
+    """Show which specialist agents ran and what they concluded."""
+    if not trace:
+        return
+    with st.expander("Multi-agent desk (orchestrator trace)", expanded=False):
+        for step in trace:
+            if isinstance(step, dict):
+                st.markdown(f"**{step.get('agent', 'Agent')}** — {step.get('summary', '')}")
+            else:
+                st.write(step)
+
+
+def merge_auto_indicators(
+    manual: dict[str, bool],
+    auto_flags: dict[str, bool] | None,
+    *,
+    use_auto: bool,
+) -> dict[str, bool]:
+    """Blend user toggles with regime-selected indicators when auto mode is on."""
+    if not use_auto or not auto_flags:
+        return manual
+    merged = dict(manual)
+    for key, val in auto_flags.items():
+        if key in merged and val:
+            merged[key] = True
+    return merged
 
 
 def render_compare_card(primary: PredictionResult, latest: float, history_row: dict | None) -> None:
@@ -217,6 +336,7 @@ def render_main_chart(
     mobile: bool,
     theme_name: str,
     indicators: dict[str, bool],
+    scenarios: list | None = None,
 ) -> None:
     """Render the professional candlestick chart."""
     hist = history.load_projection_history(symbol, 40)
@@ -237,6 +357,34 @@ def render_main_chart(
             sell_signals.append(pt)
         else:
             hold_signals.append(pt)
+
+    scenario_series = None
+    if scenarios:
+        scenario_series = {}
+        for s in scenarios:
+            name = getattr(s, "name", None) or (s.get("name") if isinstance(s, dict) else None)
+            series = getattr(s, "series", None)
+            if name and series is not None and len(series):
+                scenario_series[str(name)] = series
+
+    news_markers = None
+    impacts = (primary.raw or {}).get("news_impacts") or []
+    if impacts and len(df_ist):
+        last_ts = df_ist.index[-1]
+        last_px = float(df_ist["Close"].iloc[-1])
+        news_markers = []
+        for n in impacts[:5]:
+            d = n if isinstance(n, dict) else (n.to_dict() if hasattr(n, "to_dict") else {})
+            if not d:
+                continue
+            news_markers.append(
+                {
+                    "time": last_ts,
+                    "price": last_px,
+                    "impact": d.get("impact", "neutral"),
+                    "headline": d.get("headline", "News"),
+                }
+            )
 
     fig = build_trading_chart(
         df_ist=df_ist,
@@ -262,6 +410,8 @@ def render_main_chart(
         prediction_start=pred_start,
         prediction_end=pred_end,
         comparison_records=comparison,
+        scenario_series=scenario_series,
+        news_markers=news_markers,
     )
     st.plotly_chart(
         fig,
