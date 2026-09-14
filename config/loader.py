@@ -56,6 +56,8 @@ def load_settings(config_path: str | None = None) -> dict:
             p = Path.cwd() / p
         cfg = _deep_merge(cfg, _load_json(p))
 
+    if path := os.getenv("ANGAD_SQLITE_PATH"):
+        cfg.setdefault("storage", {})["sqlite_path"] = path.strip()
     return _apply_env_overrides(cfg)
 
 

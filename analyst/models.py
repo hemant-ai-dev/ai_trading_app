@@ -69,6 +69,7 @@ class NewsImpactItem:
     impact: str  # bullish | bearish | neutral
     strength: float  # 0–1
     reason: str
+    signed_score: float = 0.0  # −1.0 … +1.0 (master schema)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -76,6 +77,7 @@ class NewsImpactItem:
             "source": self.source,
             "impact": self.impact,
             "strength": round(self.strength, 3),
+            "signed_score": round(self.signed_score, 3),
             "reason": self.reason,
         }
 

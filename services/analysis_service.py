@@ -36,12 +36,26 @@ class AnalysisService:
         include_world_news: bool = True,
     ) -> dict[str, Any]:
         ms = get_market_status()
-        df = self.market.get_ohlcv(symbol, period, interval)
-        if df.empty:
+        df_chart = self.market.get_ohlcv(symbol, period, interval)
+        if df_chart.empty:
             return {"error": "No market data available.", "market_status": ms}
 
-        df = apply_all_indicators(df)
-        df_ist = ensure_ist_index(df)
+        fallback_note = str((df_chart.attrs or {}).get("unavailable_note") or "")
+
+        analysis_raw = df_chart
+        if len(df_chart) < 40:
+            longer = self.market.get_analysis_ohlcv(symbol, period, interval)
+            if longer is not None and len(longer) > len(df_chart):
+                analysis_raw = longer
+
+        df = apply_all_indicators(analysis_raw)
+        from services.api_monitor import log_usage
+
+        log_usage("local_ta", operation="apply_indicators", success=True, endpoint="local://indicators.technical")
+        if analysis_raw is df_chart:
+            df_ist = ensure_ist_index(df)
+        else:
+            df_ist = ensure_ist_index(apply_all_indicators(df_chart))
         latest = float(df["Close"].iloc[-1])
 
         equity_news, world_news = self.news.gather(symbol, include_world_news)
@@ -69,9 +83,9 @@ class AnalysisService:
         self.history.save_prediction(symbol, primary, market_price=latest)
         explanation = build_explanation(primary, primary.indicator_snapshot)
 
-        today = ms.now_ist.date()
-        today_slice = df_ist.loc[df_ist.index.map(lambda t: t.date()) == today]
-        live_line = today_slice["Close"] if not today_slice.empty else pd.Series(dtype=float)
+        last_session = df_ist.index[-1].date()
+        session_slice = df_ist.loc[df_ist.index.map(lambda t: t.date()) == last_session]
+        live_line = session_slice["Close"] if not session_slice.empty else df_ist["Close"]
 
         return {
             "symbol": symbol,
@@ -79,6 +93,8 @@ class AnalysisService:
             "df": df,
             "df_ist": df_ist,
             "live_line": live_line,
+            "chart_period": period,
+            "chart_interval": interval,
             "latest_price": latest,
             "primary": primary,
             "rule_result": rule_result,
@@ -96,4 +112,5 @@ class AnalysisService:
             "regime": extras.get("regime"),
             "risk_plan": (primary.raw or {}).get("risk_plan"),
             "agent_trace": (primary.raw or {}).get("agent_trace"),
+            "fallback_note": fallback_note,
         }

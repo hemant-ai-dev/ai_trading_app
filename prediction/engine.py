@@ -6,7 +6,6 @@ from typing import Any
 
 import pandas as pd
 
-from analyst.pipeline import run_analyst_pipeline
 from indicators.calculator import build_indicator_context, indicator_summary_text
 from intraday_forecast import build_comparison_series
 from market_calendar import MarketStatus
@@ -40,6 +39,8 @@ def run_prediction_pipeline(
     Returns (primary, rule_reference, projection, extras) where extras contains
     analyst metadata, preferred indicator flags, scenarios, and report.
     """
+    from analyst.pipeline import run_analyst_pipeline
+
     indicator_ctx = build_indicator_context(df)
     rule_result = predict_rule_based(df, indicator_ctx)
 

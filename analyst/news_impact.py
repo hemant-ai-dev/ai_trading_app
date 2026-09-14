@@ -63,13 +63,23 @@ def score_headline(title: str, source: str = "news") -> NewsImpactItem:
     if amp:
         reason += " Market-sensitive topic detected (earnings/macro/regulatory)."
 
-    return NewsImpactItem(
+    # Signed score on master schema scale −1.0 … +1.0
+    if impact == "bullish":
+        signed = strength
+    elif impact == "bearish":
+        signed = -strength
+    else:
+        signed = 0.0
+
+    item = NewsImpactItem(
         headline=title.strip() or "(untitled)",
         source=source,
         impact=impact,
         strength=round(strength, 3),
         reason=reason,
+        signed_score=round(signed, 3),
     )
+    return item
 
 
 def analyze_news_impact(

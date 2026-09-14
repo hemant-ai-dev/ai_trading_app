@@ -11,6 +11,8 @@ from typing import Any
 
 import yfinance as yf
 
+from services.api_monitor import track_call
+
 
 @dataclass
 class NewsItem:
@@ -46,11 +48,19 @@ def fetch_yahoo_finance_news(symbols: list[str], max_per_symbol: int = 6) -> lis
     for sym in symbols:
         if not sym:
             continue
-        try:
-            t = yf.Ticker(sym)
-            items = t.news or []
-        except Exception:
-            items = []
+        items: list = []
+        endpoint = f"https://finance.yahoo.com/quote/{sym}/news"
+        with track_call("yahoo_news", "ticker_news", endpoint) as meta:
+            try:
+                items = yf.Ticker(sym).news or []
+                meta["success"] = True
+                meta["http_status"] = 200
+                if not items:
+                    meta["error"] = "Yahoo returned an empty headline list."
+            except Exception as exc:
+                meta["success"] = False
+                meta["error"] = str(exc)
+                items = []
         for raw in items[:max_per_symbol]:
             ni = _parse_yf_news_item(raw) if isinstance(raw, dict) else None
             if ni is None:
@@ -67,30 +77,43 @@ def _strip_html(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s).strip()
 
 
+def _rss_api_code(url: str) -> str:
+    u = url.lower()
+    if "nytimes" in u or "nyt" in u:
+        return "nyt_rss"
+    return "bbc_rss"
+
+
 def fetch_rss_titles(url: str, max_items: int = 5, timeout: float = 8.0) -> list[NewsItem]:
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; ai-trading-app/1.0)"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
-        root = ET.fromstring(data)
-        titles: list[NewsItem] = []
-        for item in root.findall(".//item")[: max_items * 2]:
-            t_el = item.find("title")
-            if t_el is None or not t_el.text:
-                continue
-            title = _strip_html(t_el.text)
-            link_el = item.find("link")
-            link = link_el.text.strip() if link_el is not None and link_el.text else ""
-            if title:
-                titles.append(NewsItem(title=title, source="RSS", link=link))
-            if len(titles) >= max_items:
-                break
-        return titles
-    except Exception:
-        return []
+    code = _rss_api_code(url)
+    with track_call(code, "rss", url) as meta:
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; ai-trading-app/1.0)"},
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                meta["http_status"] = getattr(resp, "status", 200)
+                data = resp.read()
+            root = ET.fromstring(data)
+            titles: list[NewsItem] = []
+            for item in root.findall(".//item")[: max_items * 2]:
+                t_el = item.find("title")
+                if t_el is None or not t_el.text:
+                    continue
+                title = _strip_html(t_el.text)
+                link_el = item.find("link")
+                link = link_el.text.strip() if link_el is not None and link_el.text else ""
+                if title:
+                    titles.append(NewsItem(title=title, source="RSS", link=link))
+                if len(titles) >= max_items:
+                    break
+            meta["success"] = True
+            return titles
+        except Exception as exc:
+            meta["success"] = False
+            meta["error"] = str(exc)
+            return []
 
 
 def gather_intel(

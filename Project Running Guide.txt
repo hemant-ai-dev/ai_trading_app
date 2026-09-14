@@ -40,45 +40,29 @@ After activation you will see:
 pip install -r requirements.txt
 ```
 
-Includes **pyodbc** for SQL Server.
+Includes **bcrypt** for password hashing. SQLite is in the Python standard library.
 
 ---
 
-## Step 4b: SQL Server (first time)
+## Database
 
-1. Copy `config/local.example.json` → `config/local.json` and set SQL username/password.
-2. (Optional) As **sysadmin**, run `scripts/create_angad_database.sql` in SSMS to create database `AngadTrading`.
-3. Initialize tables + API seed:
+The app uses a local SQLite file:
+
+`data/storage/trading_tool.db`
+
+Tables are created automatically on first start. Data is kept across restarts.
+
+Optional path override: environment variable `ANGAD_SQLITE_PATH`.
+
+To wipe the database during development only (never automatic):
 
 ```bash
-set PYTHONPATH=D:\Projects\ai_trading_app
-py -3 scripts\setup_database.py
-py -3 scripts\seed_sql_apis.py
+python scripts/reset_sqlite_db.py --yes-delete-all-data --confirm DELETE
 ```
 
-If `AngadTrading` is not created yet, the app uses **PortfolioDB** automatically (`fallback_database` in config).
+**Hosting:** Streamlit Community Cloud and many PaaS disks are ephemeral. SQLite files there can disappear on redeploy/restart unless you attach persistent storage (volume, disk, or an external database). Do not assume cloud SQLite is permanent.
 
-Spec notes: **PART1.txt**, **PART2.txt** (upgrade ideas).
-
-Gen AI API key is stored in SQL only (not in code):
-  UPDATE api_config SET config_value='your-openai-key'
-  WHERE provider_code='openai' AND config_key='api_key';
-Then click "Reload config from SQL" in the sidebar.
-
-Seed APIs first time: py -3 scripts\seed_sql_apis.py
-See scripts\sql_change_api_examples.sql for more SQL examples.
-
-## Data retention (auto-delete after 6 months)
-
-Tables: data_retention_policy, maintenance_purge_log
-Procedure: dbo.usp_purge_data_older_than_months
-
-Change retention:
-  UPDATE dbo.data_retention_policy SET retention_months = 6 WHERE policy_key = 'default';
-
-Manual purge: EXEC dbo.usp_purge_data_older_than_months @months = 6;
-Optional monthly SQL Agent job: scripts\create_purge_sql_agent_job.sql
-App also runs purge automatically once per 24 hours when open.
+The first signed-up account becomes **Admin**. Admins open **User Management** in the sidebar.
 
 ---
 

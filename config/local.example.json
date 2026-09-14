@@ -8,5 +8,8 @@
     "yfinance": {
       "cache_ttl_seconds": 25
     }
+  },
+  "storage": {
+    "sqlite_path": "data/storage/trading_tool.db"
   }
 }

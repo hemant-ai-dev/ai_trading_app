@@ -13,9 +13,16 @@ from level_plan import chart_y_range
 from prediction.accuracy import compute_accuracy_metrics
 from prediction.history_store import PredictionHistoryStore
 from prediction.models import PredictionResult
+from ui.smart_box import build_smart_box, smart_box_html
 
 
 SIGNAL_COLORS = {"BUY": "#26a69a", "SELL": "#ef5350", "HOLD": "#f0b90b"}
+
+
+def render_smart_box(primary: PredictionResult, latest: float, theme_name: str = "dark") -> None:
+    """Glanceable recommendation card — entry, target, stop, confidence, risk."""
+    box = build_smart_box(primary, latest)
+    st.markdown(smart_box_html(box, theme_dark=theme_name != "light"), unsafe_allow_html=True)
 
 
 def render_top_bar(ms: Any, latest: float, primary: PredictionResult, symbol: str) -> None:
@@ -178,6 +185,88 @@ def render_scenarios_panel(scenarios: list | None) -> None:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
+def render_strategy_master_panel(primary: PredictionResult) -> None:
+    """Show Alpha/Beta/Gamma filters + mandatory master JSON output."""
+    raw = primary.raw or {}
+    strategies = raw.get("strategies") or {}
+    master = raw.get("master_output") or {}
+    if not strategies and not master:
+        return
+
+    st.markdown("##### Strategy Filters (Alpha / Beta / Gamma)")
+    if strategies:
+        st.caption(
+            f"Master regime: **{strategies.get('master_regime', '—')}** · "
+            f"Primary filter: **{strategies.get('primary_strategy', '—')}**"
+        )
+        rows = []
+        for key in ("alpha", "beta", "gamma"):
+            s = strategies.get(key) or {}
+            if not s:
+                continue
+            rows.append(
+                {
+                    "Strategy": s.get("name") or key.title(),
+                    "Mode": s.get("label") or "",
+                    "Signal": s.get("prediction") or "FLAT",
+                    "Active": "Yes" if s.get("active") else "No",
+                    "Note": (s.get("rationale") or "")[:120],
+                }
+            )
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        gamma = strategies.get("gamma") or {}
+        if gamma.get("divergence"):
+            st.warning(
+                "Gamma divergence: highly positive sentiment without a higher high "
+                "(possible distribution)."
+            )
+
+    if master:
+        pred = master.get("prediction", "FLAT")
+        color = (
+            SIGNAL_COLORS["BUY"]
+            if pred == "LONG"
+            else SIGNAL_COLORS["SELL"]
+            if pred == "SHORT"
+            else SIGNAL_COLORS["HOLD"]
+        )
+        st.markdown("##### Master Prediction (JSON schema)")
+        st.markdown(
+            f"""
+            <div class="compare-card" style="border-color:{color}">
+              <div><b>Prediction:</b> <span style="color:{color}">{pred}</span>
+              · Confidence {float(master.get('confidence_score') or 0) * 100:.0f}%</div>
+              <div><b>Regime:</b> {master.get('market_regime', '—')}</div>
+              <div><b>Trigger:</b> ₹{float((master.get('execution_metrics') or {}).get('trigger_price') or 0):,.2f}
+              · <b>TP:</b> ₹{float((master.get('execution_metrics') or {}).get('take_profit_target') or 0):,.2f}
+              · <b>SL:</b> ₹{float((master.get('execution_metrics') or {}).get('stop_loss_level') or 0):,.2f}</div>
+              <div><b>Rationale:</b> {master.get('technical_rationale', '')}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.expander("Raw master JSON (parser-ready)", expanded=False):
+            st.code(raw.get("master_output_json") or str(master), language="json")
+
+
+def render_what_to_do_now(explanation: dict, primary: PredictionResult) -> None:
+    """Dedicated 'What to do now' action box."""
+    color = SIGNAL_COLORS.get(primary.signal, "#95a5a6")
+    action = explanation.get("suggested_action") or "Watch the market and manage risk."
+    st.markdown("##### What to do now")
+    st.markdown(
+        f"""
+        <div class="compare-card" style="border-color:{color}">
+          <div style="font-size:1.1rem;font-weight:700;color:{color}">{primary.signal}</div>
+          <div>{action}</div>
+          <div style="margin-top:0.4rem;opacity:0.85">{explanation.get('price_range', '')}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_agent_trace(trace: list | None) -> None:
     """Show which specialist agents ran and what they concluded."""
     if not trace:
@@ -337,6 +426,7 @@ def render_main_chart(
     theme_name: str,
     indicators: dict[str, bool],
     scenarios: list | None = None,
+    chart_key: str | None = None,
 ) -> None:
     """Render the professional candlestick chart."""
     hist = history.load_projection_history(symbol, 40)
@@ -412,15 +502,18 @@ def render_main_chart(
         comparison_records=comparison,
         scenario_series=scenario_series,
         news_markers=news_markers,
+        uirevision=chart_key or f"{symbol}-{today}",
     )
     st.plotly_chart(
         fig,
         use_container_width=True,
+        key=chart_key or f"chart_{symbol}",
         config={
-            "scrollZoom": True,
-            "displayModeBar": True,
-            "modeBarButtonsToAdd": ["drawline", "drawopenpath", "eraseshape"],
+            "scrollZoom": not mobile,
+            "displayModeBar": not mobile,
+            "modeBarButtonsToAdd": [] if mobile else ["drawline", "drawopenpath", "eraseshape"],
             "displaylogo": False,
+            "responsive": True,
         },
     )
     st.caption(

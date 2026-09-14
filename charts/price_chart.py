@@ -169,6 +169,7 @@ def build_trading_chart(
     show_rsi: bool | None = None,
     scenario_series: dict[str, pd.Series] | None = None,
     news_markers: list[dict[str, Any]] | None = None,
+    uirevision: str | None = None,
 ) -> go.Figure:
     """
     Build a professional multi-pane candlestick trading chart.
@@ -719,7 +720,7 @@ def build_trading_chart(
         ),
         hovermode="x unified",
         dragmode="pan",
-        uirevision="angad-chart",  # preserve zoom across refreshes
+        uirevision=uirevision or "angad-chart",
         transition={"duration": 280, "easing": "cubic-in-out"},
         xaxis_rangeslider_visible=False,
         spikedistance=-1,

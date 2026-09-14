@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from services.market_service import MarketService
 from utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from services.market_service import MarketService
 
 logger = get_logger(__name__)
 

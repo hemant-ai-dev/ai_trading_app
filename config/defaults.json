@@ -4,7 +4,7 @@
     "subtitle": "Educational market analysis with explainable AI predictions. Not financial advice."
   },
   "llm": {
-    "provider": "openai",
+    "provider": "none",
     "openai": {
       "model_chat": "gpt-4o-mini",
       "model_json": "gpt-4o-mini",
@@ -23,7 +23,8 @@
     }
   },
   "storage": {
-    "predictions_path": "data/storage/predictions.json"
+    "predictions_path": "data/storage/predictions.json",
+    "sqlite_path": "data/storage/trading_tool.db"
   },
   "news": {
     "provider": "yahoo_rss",

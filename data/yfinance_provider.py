@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 import yfinance as yf
 
+from services.api_monitor import track_call
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -42,27 +43,36 @@ class YfinanceMarketData:
         auto_adjust = bool(self._opts.get("auto_adjust", True))
         prepost = bool(self._opts.get("prepost", False))
 
-        ticker = yf.Ticker(sym)
-        df = ticker.history(
-            period=period,
-            interval=interval,
-            auto_adjust=auto_adjust,
-            prepost=prepost,
-            actions=False,
-        )
-        df = _normalize_ohlcv(df)
-
-        if df.empty:
-            raw = yf.download(
-                sym,
+        endpoint = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+        with track_call("yfinance", f"history:{interval}", endpoint) as meta:
+            ticker = yf.Ticker(sym)
+            df = ticker.history(
                 period=period,
                 interval=interval,
-                progress=False,
                 auto_adjust=auto_adjust,
                 prepost=prepost,
-                threads=False,
+                actions=False,
             )
-            df = _normalize_ohlcv(raw)
+            df = _normalize_ohlcv(df)
+
+            if df.empty:
+                raw = yf.download(
+                    sym,
+                    period=period,
+                    interval=interval,
+                    progress=False,
+                    auto_adjust=auto_adjust,
+                    prepost=prepost,
+                    threads=False,
+                )
+                df = _normalize_ohlcv(raw)
+
+            if df.empty:
+                meta["success"] = False
+                meta["error"] = f"Yahoo Finance returned no OHLCV for {sym} ({period}/{interval})."
+                return df
+            meta["success"] = True
+            meta["http_status"] = 200
 
         if df.empty:
             return df
@@ -92,9 +102,18 @@ class YfinanceMarketData:
         return df
 
     def get_latest_price(self, symbol: str) -> float | None:
-        try:
-            info = yf.Ticker(symbol.strip()).fast_info
-            px = getattr(info, "last_price", None) or getattr(info, "lastPrice", None)
-            return float(px) if px else None
-        except Exception:
-            return None
+        endpoint = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol.strip()}"
+        with track_call("yfinance", "last_price", endpoint) as meta:
+            try:
+                info = yf.Ticker(symbol.strip()).fast_info
+                px = getattr(info, "last_price", None) or getattr(info, "lastPrice", None)
+                if px:
+                    meta["success"] = True
+                    return float(px)
+                meta["success"] = False
+                meta["error"] = "No last_price on Yahoo fast_info."
+                return None
+            except Exception as exc:
+                meta["success"] = False
+                meta["error"] = str(exc)
+                return None

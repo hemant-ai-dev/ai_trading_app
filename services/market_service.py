@@ -1,25 +1,16 @@
-"""Market data service with caching."""
+"""Market data service with caching and Yahoo-safe timeframe handling."""
 
 from __future__ import annotations
 
 import pandas as pd
 
 from config.loader import load_settings
+from config.timeframes import FETCH_FALLBACKS, PERIOD_INTERVALS, default_interval, intervals_for_period
 from data.cache import APP_CACHE
 from data.provider_registry import build_market_data_provider
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-_INTERVAL_PERIOD_HINTS = {
-    "1m": ("1d", "5d", "7d"),
-    "2m": ("1d", "5d", "7d"),
-    "5m": ("1d", "5d", "1mo"),
-    "15m": ("5d", "1mo", "3mo"),
-    "30m": ("5d", "1mo", "3mo"),
-    "1h": ("1mo", "3mo", "6mo"),
-    "1d": ("1mo", "3mo", "6mo", "1y", "2y", "5y"),
-}
 
 
 class MarketService:
@@ -31,9 +22,18 @@ class MarketService:
 
     @staticmethod
     def normalize_period_interval(period: str, interval: str) -> tuple[str, str]:
-        allowed = _INTERVAL_PERIOD_HINTS.get(interval)
-        if allowed and period not in allowed:
-            return allowed[0], interval
+        """Keep the user's period when possible; swap interval if Yahoo cannot serve it."""
+        period = (period or "5d").strip()
+        interval = (interval or "5m").strip()
+        allowed = PERIOD_INTERVALS.get(period)
+        if allowed and interval not in allowed:
+            interval = default_interval(period)
+        if period not in PERIOD_INTERVALS:
+            # Unknown period: keep interval if we know it, else 5m / 5d
+            if interval in intervals_for_period("5d"):
+                period = "5d"
+            else:
+                period, interval = "1mo", "1d"
         return period, interval
 
     def _cache_ttl(self, interval: str) -> int:
@@ -44,21 +44,101 @@ class MarketService:
             return min(base, 30)
         return base
 
-    def get_ohlcv(self, symbol: str, period: str = "5d", interval: str = "5m") -> pd.DataFrame:
-        period, interval = self.normalize_period_interval(period, interval)
-        cache_key = f"ohlcv|{symbol}|{period}|{interval}"
+    def get_ohlcv(
+        self,
+        symbol: str,
+        period: str = "5d",
+        interval: str = "5m",
+        *,
+        clip_to_session: bool | None = None,
+    ) -> pd.DataFrame:
+        requested_period, interval = self.normalize_period_interval(period, interval)
+        clip = (
+            bool(clip_to_session)
+            if clip_to_session is not None
+            else (requested_period == "1d" and interval != "1d")
+        )
+        cache_key = f"ohlcv|{symbol}|{requested_period}|{interval}|clip={int(clip)}"
 
         def _fetch() -> pd.DataFrame:
-            try:
-                df = self._provider.download(symbol, period, interval)
-                if df.empty:
-                    logger.warning("No data for %s (%s/%s)", symbol, period, interval)
+            attempts = [(requested_period, interval)] + FETCH_FALLBACKS.get(
+                (requested_period, interval), []
+            )
+            df = pd.DataFrame()
+            used_period, used_interval = requested_period, interval
+            for p, iv in attempts:
+                try:
+                    candidate = self._provider.download(symbol, p, iv)
+                except Exception as exc:
+                    logger.error("Data fetch error for %s (%s/%s): %s", symbol, p, iv, exc)
+                    continue
+                if candidate is None or candidate.empty:
+                    logger.warning("No data for %s (%s/%s)", symbol, p, iv)
+                    continue
+                df = candidate
+                used_period, used_interval = p, iv
+                break
+
+            if df.empty:
+                from data.stooq_provider import fetch_stooq_daily
+
+                logger.warning("Yahoo Finance empty for %s — trying Stooq daily fallback", symbol)
+                fallback = fetch_stooq_daily(symbol, requested_period)
+                if fallback is not None and not fallback.empty:
+                    df = fallback
+                    used_period, used_interval = requested_period, "1d"
+                    df.attrs["fallback_api"] = "stooq"
+                    df.attrs["unavailable_note"] = (
+                        "Yahoo Finance returned no bars. Showing Stooq daily CSV "
+                        "(intraday charts are unavailable from this fallback)."
+                    )
+
+            if df.empty:
                 return df
-            except Exception as exc:
-                logger.error("Data fetch error for %s: %s", symbol, exc)
-                return pd.DataFrame()
+
+            df = _ensure_datetime_index(df)
+            if clip and requested_period == "1d" and interval != "1d":
+                sliced = _slice_last_session(df)
+                if not sliced.empty:
+                    df = sliced
+            df.attrs["resolved_period"] = used_period
+            df.attrs["resolved_interval"] = used_interval
+            df.attrs["requested_period"] = requested_period
+            return df
 
         return APP_CACHE.get_or_set(cache_key, self._cache_ttl(interval), _fetch)
 
+    def get_analysis_ohlcv(self, symbol: str, period: str, interval: str) -> pd.DataFrame:
+        """Longer lookback for indicators when the visible chart window is too short."""
+        period, interval = self.normalize_period_interval(period, interval)
+        lookback = {
+            "1m": "5d",
+            "2m": "5d",
+            "5m": "5d",
+            "15m": "1mo",
+            "30m": "1mo",
+            "1h": "1mo",
+            "1d": "1y",
+        }.get(interval, "5d")
+        return self.get_ohlcv(symbol, lookback, interval, clip_to_session=False)
+
     def get_latest_price(self, symbol: str) -> float | None:
         return self._provider.get_latest_price(symbol)
+
+
+def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out.index = pd.to_datetime(out.index)
+    if getattr(out.index, "tz", None) is not None:
+        out.index = out.index.tz_localize(None)
+    return out.sort_index()
+
+
+def _slice_last_session(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only the last trading session so a 1-day request paints one session, not a week."""
+    if df is None or df.empty:
+        return df
+    last_day = pd.Timestamp(df.index[-1]).date()
+    mask = [pd.Timestamp(t).date() == last_day for t in df.index]
+    sliced = df.loc[mask]
+    return sliced if not sliced.empty else df

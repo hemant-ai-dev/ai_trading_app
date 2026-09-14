@@ -26,6 +26,7 @@ def build_evidence_factors(
     chart_patterns: list[dict],
     candle_patterns: list[dict],
     market_ctx: dict[str, Any],
+    strategy_bundle: dict[str, Any] | None = None,
 ) -> list[EvidenceFactor]:
     """Create weighted evidence factors from all analyst inputs."""
     factors: list[EvidenceFactor] = []
@@ -242,6 +243,41 @@ def build_evidence_factors(
     elif vix is not None and float(vix) <= 12:
         add("India VIX", "macro", "macro", 0.15,
             f"India VIX calm ({float(vix):.1f}) — smoother tape.")
+
+    # --- Master strategies Alpha / Beta / Gamma ---
+    if strategy_bundle:
+        primary_name = strategy_bundle.get("primary_strategy") or "Alpha"
+        for key in ("Alpha", "Beta", "Gamma"):
+            st = (strategy_bundle.get("strategies") or {}).get(key) or strategy_bundle.get(key.lower())
+            if not st:
+                continue
+            signed = float(st.get("signed_strength") or 0)
+            is_primary = key == primary_name
+            # Boost primary strategy; Gamma always counts when divergence/active
+            boost = 1.25 if is_primary else (1.1 if key == "Gamma" and st.get("active") else 0.85)
+            w_key = "trend" if key == "Alpha" else ("bollinger" if key == "Beta" else "news")
+            # Temporarily scale weight
+            old_w = weights.get(w_key, 1.0)
+            weights[w_key] = old_w * boost
+            if abs(signed) < 0.05:
+                add(
+                    f"Strategy {key}",
+                    "strategy",
+                    w_key,
+                    0.0,
+                    st.get("rationale") or f"{key} FLAT.",
+                    force_reject=True,
+                    reject_reason=f"{key} filter inactive for current tape.",
+                )
+            else:
+                add(
+                    f"Strategy {key}",
+                    "strategy",
+                    w_key,
+                    signed,
+                    st.get("rationale") or f"{key} signal {st.get('prediction')}.",
+                )
+            weights[w_key] = old_w
 
     return factors
 
