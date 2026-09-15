@@ -1,4 +1,4 @@
-"""Auth hashing and SQLite TReadUser."""
+"""Auth hashing and Excel user workbook."""
 
 from auth.captcha import captcha_matches, generate_captcha_text
 from auth.passwords import hash_password, validate_signup, verify_password
@@ -45,7 +45,7 @@ def test_session_expiry_helper():
     assert session_expired("not-a-date") is True
 
 
-def test_sqlite_register_login(tmp_path, monkeypatch):
+def test_excel_register_login(tmp_path, monkeypatch):
     monkeypatch.setenv("ANGAD_SQLITE_PATH", str(tmp_path / "trading_tool.db"))
     initialize()
     rec, err = create_user("trader1", "t@example.com", "secret-pass1")
@@ -59,3 +59,5 @@ def test_sqlite_register_login(tmp_path, monkeypatch):
     assert rec2.role == "User"
     bad, bad_err = authenticate("trader1", "wrong-pass1")
     assert bad is None and bad_err
+    missing, missing_err = authenticate("nobody", "secret-pass1")
+    assert missing is None and missing_err

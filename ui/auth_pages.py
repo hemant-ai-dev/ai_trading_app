@@ -73,8 +73,8 @@ html, body, .stApp { overflow-x: hidden !important; }
     <span>NIFTY 50</span><span>BANK NIFTY</span><span>SENSEX</span><span>Smart Box</span>
   </div>
   <ul class="auth-points">
-    <li>Hashed passwords. Sessions expire after 12 hours.</li>
-    <li>Logout stays on the header after you sign in.</li>
+    <li>Accounts live in a hashed Excel workbook — not SQL Server and not your PC database.</li>
+    <li>Hashed passwords. Sessions expire after 12 hours. Logout stays on the header.</li>
     <li>Educational analysis only — not financial advice and not a profit guarantee.</li>
   </ul>
 </div>
@@ -102,7 +102,10 @@ def _captcha_block(session_key: str, input_key: str) -> str:
 
 def _render_login() -> None:
     st.markdown('<div class="auth-card-title">Sign in</div>', unsafe_allow_html=True)
-    st.caption("Use your username or email. Your password is never shown from storage.")
+    st.caption(
+        "Use your username or email. Cloud logins are not copied from your PC — "
+        "Sign up on this site if you have not created an account here yet."
+    )
     show_pw = st.toggle("Show password", value=False, key="login_show_pw")
     with st.form("login_form", clear_on_submit=False):
         ident = st.text_input("Username or email", placeholder="trader or you@email.com")
@@ -148,7 +151,10 @@ def _render_login() -> None:
 
 def _render_signup() -> None:
     st.markdown('<div class="auth-card-title">Create account</div>', unsafe_allow_html=True)
-    st.caption("The first account on a new database becomes Admin. Later sign-ups are standard users.")
+    st.caption(
+        "Creates a hashed row in data/users.xlsx. The first account becomes Admin. "
+        "This cloud site does not use a local SQL Server."
+    )
     show_pw = st.toggle("Show password", value=False, key="signup_show_pw")
     with st.form("signup_form", clear_on_submit=False):
         username = st.text_input("Username", placeholder="3–32 letters, numbers, . _ -")

@@ -1,13 +1,12 @@
-"""Admin operations on TReadUser — never returns password hashes to the UI."""
+"""Admin operations on the Excel user workbook — never returns password hashes."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from db.database import fetch_all, fetch_one, get_connection
+from auth.excel_store import find_by_id, load_rows, save_rows, upsert_user
 
-
-SAFE_COLUMNS = (
+SAFE_KEYS = (
     "UserId",
     "Username",
     "Email",
@@ -20,102 +19,84 @@ SAFE_COLUMNS = (
 )
 
 
-def _select() -> str:
-    return ", ".join(SAFE_COLUMNS)
+def _safe(row: dict[str, Any]) -> dict[str, Any]:
+    return {k: row.get(k) for k in SAFE_KEYS}
 
 
-def list_users(
-    *,
-    search: str = "",
-    role: str = "",
-    status: str = "",
-) -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: list[Any] = []
-    if search.strip():
-        q = f"%{search.strip()}%"
-        clauses.append("(Username LIKE ? OR Email LIKE ?)")
-        params.extend([q, q])
-    if role in ("Admin", "User"):
-        clauses.append("Role = ?")
-        params.append(role)
-    if status == "Active":
-        clauses.append("IsActive = 1")
-    elif status == "Inactive":
-        clauses.append("IsActive = 0")
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    return fetch_all(
-        f"SELECT {_select()} FROM TReadUser {where} ORDER BY CreatedAt DESC",
-        tuple(params),
-    )
+def list_users(*, search: str = "", role: str = "", status: str = "") -> list[dict[str, Any]]:
+    rows = [_safe(r) for r in load_rows()]
+    q = search.strip().lower()
+    out = []
+    for r in rows:
+        if q and q not in str(r.get("Username", "")).lower() and q not in str(r.get("Email", "")).lower():
+            continue
+        if role in ("Admin", "User") and str(r.get("Role")) != role:
+            continue
+        if status == "Active" and int(r.get("IsActive") or 0) != 1:
+            continue
+        if status == "Inactive" and int(r.get("IsActive") or 0) == 1:
+            continue
+        out.append(r)
+    out.sort(key=lambda r: str(r.get("CreatedAt") or ""), reverse=True)
+    return out
 
 
 def get_user(user_id: int) -> dict[str, Any] | None:
-    return fetch_one(
-        f"SELECT {_select()} FROM TReadUser WHERE UserId = ?",
-        (int(user_id),),
-    )
+    row = find_by_id(user_id)
+    return _safe(row) if row else None
 
 
 def set_active(user_id: int, active: bool) -> None:
-    with get_connection() as cn:
-        cn.execute(
-            """
-            UPDATE TReadUser
-            SET IsActive = ?, UpdatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            WHERE UserId = ?
-            """,
-            (1 if active else 0, int(user_id)),
-        )
+    row = find_by_id(user_id)
+    if not row:
+        return
+    row["IsActive"] = 1 if active else 0
+    upsert_user(row)
 
 
 def set_role(user_id: int, role: str) -> str | None:
     if role not in ("Admin", "User"):
         return "Invalid role."
+    rows = load_rows()
     if role == "User":
-        remaining = fetch_one(
-            "SELECT COUNT(*) AS n FROM TReadUser WHERE Role = 'Admin' AND UserId <> ?",
-            (int(user_id),),
-        )
-        if remaining and int(remaining["n"]) == 0:
+        admins = [r for r in rows if str(r.get("Role")) == "Admin" and int(r.get("UserId") or 0) != int(user_id)]
+        if not admins:
             return "Cannot remove the last administrator."
-    with get_connection() as cn:
-        cn.execute(
-            """
-            UPDATE TReadUser
-            SET Role = ?, UpdatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            WHERE UserId = ?
-            """,
-            (role, int(user_id)),
-        )
+    row = find_by_id(user_id)
+    if not row:
+        return "User not found."
+    row["Role"] = role
+    upsert_user(row)
     return None
 
 
 def delete_user(user_id: int, *, actor_id: int) -> str | None:
     if int(user_id) == int(actor_id):
         return "You cannot delete your own account while signed in."
-    target = get_user(user_id)
+    target = find_by_id(user_id)
     if not target:
         return "User not found."
-    if target.get("Role") == "Admin":
-        remaining = fetch_one(
-            "SELECT COUNT(*) AS n FROM TReadUser WHERE Role = 'Admin' AND UserId <> ?",
-            (int(user_id),),
-        )
-        if remaining and int(remaining["n"]) == 0:
+    rows = load_rows()
+    if str(target.get("Role")) == "Admin":
+        others = [r for r in rows if str(r.get("Role")) == "Admin" and int(r.get("UserId") or 0) != int(user_id)]
+        if not others:
             return "Cannot delete the last administrator."
-    with get_connection() as cn:
-        cn.execute("DELETE FROM TReadUser WHERE UserId = ?", (int(user_id),))
+    keep = [r for r in rows if int(r.get("UserId") or 0) != int(user_id)]
+    save_rows(keep)
     return None
 
 
 def pending_resets() -> list[dict[str, Any]]:
-    return fetch_all(
-        """
-        SELECT r.ResetId, r.UserId, r.RequestedAt, u.Username, u.Email
-        FROM TPasswordReset r
-        JOIN TReadUser u ON u.UserId = r.UserId
-        WHERE r.Status = 'pending'
-        ORDER BY r.RequestedAt DESC
-        """
-    )
+    out = []
+    for r in load_rows():
+        if int(r.get("ResetPending") or 0) == 1:
+            out.append(
+                {
+                    "ResetId": int(r.get("UserId") or 0),
+                    "UserId": int(r.get("UserId") or 0),
+                    "RequestedAt": r.get("UpdatedAt"),
+                    "Username": r.get("Username"),
+                    "Email": r.get("Email"),
+                }
+            )
+    return out

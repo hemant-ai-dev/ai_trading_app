@@ -1,4 +1,4 @@
-"""User authentication against the TReadUser SQLite table."""
+"""User authentication against data/users.xlsx (hashed passwords)."""
 
 from __future__ import annotations
 

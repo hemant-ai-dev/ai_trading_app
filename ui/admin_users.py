@@ -16,7 +16,7 @@ def render_user_management(actor: dict) -> None:
 
     st.markdown('<div class="terminal-title">User Management</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="terminal-sub">Registered accounts · passwords are hashed and never displayed</div>',
+        '<div class="terminal-sub">Excel user workbook · passwords are hashed and never displayed</div>',
         unsafe_allow_html=True,
     )
 
