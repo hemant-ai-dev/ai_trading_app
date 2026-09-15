@@ -7,7 +7,7 @@ from db.schema import API_SEED, SCHEMA_STATEMENTS
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def initialize() -> None:

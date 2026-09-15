@@ -13,7 +13,7 @@ from market_calendar import format_market_context_for_llm, get_market_status
 from market_intel import format_headlines_indexed_for_prompt
 from prediction.engine import run_prediction_pipeline
 from prediction.history_store import PredictionHistoryStore
-from services.market_service import MarketService
+from services.market_service import MarketService, clip_to_requested_window
 from services.news_service import NewsService
 from utils.time_utils import ensure_ist_index
 
@@ -34,6 +34,7 @@ class AnalysisService:
         interval: str = "5m",
         use_genai: bool = True,
         include_world_news: bool = True,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         ms = get_market_status()
         df_chart = self.market.get_ohlcv(symbol, period, interval)
@@ -56,7 +57,8 @@ class AnalysisService:
             df_ist = ensure_ist_index(df)
         else:
             df_ist = ensure_ist_index(apply_all_indicators(df_chart))
-        latest = float(df["Close"].iloc[-1])
+        df_ist = clip_to_requested_window(df_ist, period, interval)
+        latest = float(df_ist["Close"].iloc[-1]) if len(df_ist) else float(df["Close"].iloc[-1])
 
         equity_news, world_news = self.news.gather(symbol, include_world_news)
         headline_block, _ = format_headlines_indexed_for_prompt(equity_news, world_news)
@@ -81,6 +83,17 @@ class AnalysisService:
 
         self.history.update_actual_prices(symbol, latest)
         self.history.save_prediction(symbol, primary, market_price=latest)
+        if user_id:
+            from prediction import archive
+
+            archive.backfill_actuals(int(user_id), symbol, latest)
+            archive.save_prediction(
+                user_id=int(user_id),
+                symbol=symbol,
+                result=primary,
+                market_price=latest,
+                horizon=f"{period}/{interval}",
+            )
         explanation = build_explanation(primary, primary.indicator_snapshot)
 
         last_session = df_ist.index[-1].date()

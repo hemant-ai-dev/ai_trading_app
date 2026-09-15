@@ -119,6 +119,14 @@ def create_user(
         return None, str(exc)
 
 
+def get_user_by_id(user_id: int) -> UserRecord | None:
+    init_user_store()
+    row = fetch_one("SELECT * FROM TReadUser WHERE UserId = ?", (int(user_id),))
+    if not row:
+        return None
+    return _row_user(row)
+
+
 def get_user_by_username(username: str) -> dict[str, Any] | None:
     init_user_store()
     ident = username.strip()

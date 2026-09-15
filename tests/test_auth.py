@@ -31,6 +31,20 @@ def test_captcha_has_letters_and_digits():
     assert not captcha_matches("XXXXXX", code)
 
 
+def test_session_expiry_helper():
+    from datetime import datetime, timedelta, timezone
+
+    from auth.session import session_expired
+
+    now = datetime.now(timezone.utc)
+    fresh = (now - timedelta(hours=1)).isoformat()
+    stale = (now - timedelta(hours=13)).isoformat()
+    assert session_expired(fresh) is False
+    assert session_expired(stale) is True
+    assert session_expired(None) is True
+    assert session_expired("not-a-date") is True
+
+
 def test_sqlite_register_login(tmp_path, monkeypatch):
     monkeypatch.setenv("ANGAD_SQLITE_PATH", str(tmp_path / "trading_tool.db"))
     initialize()

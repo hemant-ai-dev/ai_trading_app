@@ -101,6 +101,16 @@ class PredictionHistoryStore:
             }
         )
         all_records = self._load_all()
+        last = all_records[-1] if all_records else None
+        if last and str(last.get("symbol", "")).upper() == symbol.upper():
+            try:
+                prev = datetime.fromisoformat(str(last["timestamp"]))
+                if prev.tzinfo is None:
+                    prev = prev.replace(tzinfo=IST)
+                if now - prev < timedelta(seconds=55):
+                    return PredictionRecord.from_dict(last)
+            except (TypeError, ValueError, KeyError):
+                pass
         all_records.append(payload)
         # Keep file bounded
         if len(all_records) > 2000:

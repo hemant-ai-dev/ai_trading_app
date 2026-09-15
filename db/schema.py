@@ -95,6 +95,119 @@ SCHEMA_STATEMENTS = [
         AppliedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS TPrediction (
+        PredictionId INTEGER PRIMARY KEY AUTOINCREMENT,
+        UserId INTEGER NOT NULL,
+        Symbol TEXT NOT NULL,
+        Exchange TEXT NOT NULL DEFAULT 'NSE',
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        MarketPrice REAL,
+        Horizon TEXT,
+        PredictedPrice REAL,
+        PriceLow REAL,
+        PriceHigh REAL,
+        Direction TEXT,
+        Signal TEXT,
+        Confidence REAL,
+        StrategyVersion TEXT,
+        MarketRegime TEXT,
+        FeaturesJson TEXT,
+        RiskLevel TEXT,
+        ReasonsJson TEXT,
+        ProjectionJson TEXT,
+        ActualPrice REAL,
+        FOREIGN KEY (UserId) REFERENCES TReadUser (UserId)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS IX_TPrediction_UserSymbol ON TPrediction (UserId, Symbol, CreatedAt DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS TWorkerTask (
+        TaskId INTEGER PRIMARY KEY AUTOINCREMENT,
+        PublicId TEXT NOT NULL UNIQUE,
+        UserId INTEGER NOT NULL,
+        Source TEXT NOT NULL,
+        RequestText TEXT NOT NULL,
+        IntentJson TEXT,
+        Symbol TEXT,
+        RequiredAction TEXT,
+        Priority TEXT NOT NULL DEFAULT 'normal',
+        Status TEXT NOT NULL DEFAULT 'queued',
+        CurrentWorker TEXT,
+        PlanJson TEXT,
+        StepIndex INTEGER NOT NULL DEFAULT 0,
+        MarketJson TEXT,
+        RiskJson TEXT,
+        AuthorizationJson TEXT,
+        ResultJson TEXT,
+        ErrorMessage TEXT,
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UpdatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        FOREIGN KEY (UserId) REFERENCES TReadUser (UserId)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS IX_TWorkerTask_UserStatus ON TWorkerTask (UserId, Status, CreatedAt DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS TTaskEvent (
+        EventId INTEGER PRIMARY KEY AUTOINCREMENT,
+        TaskId INTEGER NOT NULL,
+        WorkerCode TEXT NOT NULL,
+        StepName TEXT NOT NULL,
+        Status TEXT NOT NULL,
+        Detail TEXT,
+        PayloadJson TEXT,
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        FOREIGN KEY (TaskId) REFERENCES TWorkerTask (TaskId) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS IX_TTaskEvent_Task ON TTaskEvent (TaskId, EventId)",
+    """
+    CREATE TABLE IF NOT EXISTS TAuditLog (
+        AuditId INTEGER PRIMARY KEY AUTOINCREMENT,
+        UserId INTEGER,
+        TaskId INTEGER,
+        Action TEXT NOT NULL,
+        Detail TEXT,
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS TChatMessage (
+        MessageId INTEGER PRIMARY KEY AUTOINCREMENT,
+        UserId INTEGER NOT NULL,
+        Role TEXT NOT NULL,
+        Content TEXT NOT NULL,
+        Symbol TEXT,
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        FOREIGN KEY (UserId) REFERENCES TReadUser (UserId)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS TPaperAccount (
+        UserId INTEGER PRIMARY KEY,
+        CashBalance REAL NOT NULL DEFAULT 100000,
+        Currency TEXT NOT NULL DEFAULT 'INR',
+        UpdatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        FOREIGN KEY (UserId) REFERENCES TReadUser (UserId)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS TPaperOrder (
+        OrderId INTEGER PRIMARY KEY AUTOINCREMENT,
+        PublicId TEXT NOT NULL UNIQUE,
+        UserId INTEGER NOT NULL,
+        TaskId INTEGER,
+        Symbol TEXT NOT NULL,
+        Side TEXT NOT NULL,
+        Quantity REAL NOT NULL,
+        LimitPrice REAL,
+        Status TEXT NOT NULL,
+        FilledPrice REAL,
+        Broker TEXT NOT NULL DEFAULT 'paper',
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        FOREIGN KEY (UserId) REFERENCES TReadUser (UserId)
+    )
+    """,
 ]
 
 API_SEED = [

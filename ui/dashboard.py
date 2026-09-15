@@ -13,25 +13,142 @@ from level_plan import chart_y_range
 from prediction.accuracy import compute_accuracy_metrics
 from prediction.history_store import PredictionHistoryStore
 from prediction.models import PredictionResult
-from ui.smart_box import build_smart_box, smart_box_html
+from ui.smart_box import build_smart_box
 
 
 SIGNAL_COLORS = {"BUY": "#26a69a", "SELL": "#ef5350", "HOLD": "#f0b90b"}
 
 
-def render_smart_box(primary: PredictionResult, latest: float, theme_name: str = "dark") -> None:
-    """Glanceable recommendation card — entry, target, stop, confidence, risk."""
+def render_desk_header(username: str, role: str) -> None:
+    """Trading-floor banner with a moving ticker strip."""
+    st.markdown(
+        f"""
+<div class="desk-hero">
+  <div class="desk-hero-copy">
+    <div class="terminal-title">Angad — Trading Floor</div>
+    <div class="terminal-sub">Signed in as <b>{username}</b> · {role} · Smart Box for a quick read, charts when you want depth</div>
+  </div>
+  <div class="desk-live-pill">LIVE DESK</div>
+</div>
+<div class="ticker-wrap">
+  <div class="ticker-tape">NSE · NIFTY 50 · BANK NIFTY · SENSEX · RELIANCE · TCS · INFY · BUY / SELL / HOLD · Educational analysis · Not a profit guarantee · </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def render_ai_signal_hero(primary: PredictionResult, latest: float, explanation: dict | None = None) -> None:
+    """Primary decision card: signal, entry, target, stop, confidence, risk."""
     box = build_smart_box(primary, latest)
-    st.markdown(smart_box_html(box, theme_dark=theme_name != "light"), unsafe_allow_html=True)
+    color = SIGNAL_COLORS.get(box["signal"], "#94a3b8")
+    explanation = explanation or {}
+    reasons = explanation.get("reasons") or primary.reasons_simple or primary.reasons or []
+    why = str(reasons[0]) if reasons else box["summary"]
+    st.markdown(
+        f"""
+<div class="signal-hero" style="border-color:{color}">
+  <div class="smart-kicker">AI SIGNAL · Smart Box</div>
+  <div class="smart-signal" style="color:{color}">{box["headline"]}</div>
+  <p class="smart-summary">{box["summary"]}</p>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+    if box["signal"] == "HOLD":
+        a, b, c, d = st.columns(4)
+        a.metric("Watch buy near", f"₹{box['consider_buy']:,.2f}")
+        b.metric("Watch sell near", f"₹{box['consider_sell']:,.2f}")
+        c.metric("Confidence", f"{box['confidence']:.0f}%")
+        d.metric("Risk", box["risk_level"])
+        st.info(
+            f"HOLD means no high-conviction setup yet. A BUY becomes more interesting near "
+            f"₹{box['consider_buy']:,.2f} with confirmation; a SELL / reduce near ₹{box['consider_sell']:,.2f}."
+        )
+    else:
+        a, b, c, d, e = st.columns(5)
+        a.metric("Entry", f"₹{box['entry']:,.2f}")
+        b.metric("Target", f"₹{box['target']:,.2f}")
+        c.metric("Stop-loss", f"₹{box['stop']:,.2f}")
+        d.metric("Confidence", f"{box['confidence']:.0f}%")
+        e.metric("Risk", box["risk_level"])
+    st.caption(f"Why (short): {why} · Regime {box['regime']} · Trend {box['trend']} · Not a profit guarantee")
+
+
+def render_market_overview(ms: Any, latest: float, primary: PredictionResult, symbol: str, bars: int, window_label: str) -> None:
+    color = SIGNAL_COLORS.get(primary.signal, "#95a5a6")
+    phase = ms.phase.value.replace("_", " ").title()
+    if phase.lower().startswith("closed"):
+        phase = "Closed"
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Symbol", symbol)
+    c2.metric("Live price", f"₹{latest:,.2f}")
+    c3.metric("Session", phase)
+    c4.metric("IST", ms.now_ist.strftime("%H:%M:%S"))
+    c5.metric("Trend", (primary.trend or "—").title())
+    c6.metric("Regime", primary.market_regime or "—")
+    st.markdown(f'<div class="signal-strip" style="border-color:{color}"></div>', unsafe_allow_html=True)
+    st.caption(window_label)
+
+
+def render_sentiment_card(news_agg: dict | None, news_impacts: list | None) -> None:
+    agg = news_agg or {}
+    net = float(agg.get("net_score") or 0)
+    score = int(max(0, min(100, round((net + 2.5) / 5 * 100))))
+    tilt = str(agg.get("tilt") or "neutral").title()
+    color = SIGNAL_COLORS["BUY"] if tilt.lower() == "bullish" else (
+        SIGNAL_COLORS["SELL"] if tilt.lower() == "bearish" else SIGNAL_COLORS["HOLD"]
+    )
+    st.markdown("##### Market sentiment")
+    st.markdown(
+        f"""
+<div class="sentiment-card">
+  <div class="sentiment-score" style="color:{color}">{score}</div>
+  <div class="sentiment-tilt" style="color:{color}">{tilt}</div>
+  <div class="sentiment-copy">{agg.get("summary") or "No scored headlines this run."}</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+    st.progress(min(max(score / 100.0, 0.0), 1.0))
+    st.caption(f"From {agg.get('count', 0)} scored headlines · bull {agg.get('bull_score', 0)} / bear {agg.get('bear_score', 0)}")
+
+
+def render_recent_analysis(history: PredictionHistoryStore, symbol: str) -> None:
+    st.markdown("##### Recent analysis")
+    df = history.to_dataframe(None, limit=8)
+    if df.empty:
+        st.caption("Your runs on this account will appear here.")
+        return
+    keep = [c for c in ("timestamp", "symbol", "signal", "confidence", "predicted_price", "accuracy_label") if c in df.columns]
+    st.dataframe(df[keep], use_container_width=True, hide_index=True, height=220)
+
+
+def render_performance_strip(history: PredictionHistoryStore, symbol: str) -> None:
+    metrics = compute_accuracy_metrics(symbol, history)
+    a, b, c, d = st.columns(4)
+    a.metric("Win rate", f"{metrics['win_rate_pct']}%")
+    b.metric("Accuracy ±1%", f"{metrics['accuracy_pct']}%")
+    c.metric("Evaluated", int(metrics["evaluated"]))
+    d.metric("P/L sim", f"{metrics['profit_loss_sim_pct']}%")
+    st.caption(f"Performance for {symbol} on this account · educational simulation, not a profit guarantee")
+
+
+def render_smart_box(primary: PredictionResult, latest: float, theme_name: str = "dark") -> None:
+    """Glanceable recommendation — delegates to the hero signal card."""
+    render_ai_signal_hero(primary, latest)
 
 
 def render_top_bar(ms: Any, latest: float, primary: PredictionResult, symbol: str) -> None:
     """Live market header strip."""
     color = SIGNAL_COLORS.get(primary.signal, "#95a5a6")
     c1, c2, c3, c4, c5, c6 = st.columns([1.1, 1.1, 1.2, 1.0, 1.0, 1.2])
+    phase = ms.phase.value.replace("_", " ").title()
+    if phase.lower().startswith("closed"):
+        phase = "Closed"
     c1.metric("Symbol", symbol)
     c2.metric("IST Time", ms.now_ist.strftime("%H:%M:%S"))
-    c3.metric("Session", ms.phase.value.replace("_", " ").title())
+    c3.metric("Session", phase)
     c4.metric("Live Price", f"₹{latest:,.2f}")
     c5.metric("Signal", primary.signal)
     c6.metric("Confidence", f"{primary.confidence:.0f}%")
@@ -388,26 +505,34 @@ def render_volume_analysis(ctx: dict) -> None:
 
 
 def collect_indicator_flags(sidebar: bool = True) -> dict[str, bool]:
-    """Sidebar toggles for each indicator overlay."""
-    container = st.sidebar if sidebar else st
-    container.markdown("### Chart Indicators")
+    """Toggles for each indicator overlay (sidebar or main desk)."""
     flags = dict(DEFAULT_INDICATORS)
     labels = {
-        "ema": "EMA 9 / 20 / 50",
-        "sma": "SMA 20 / 50",
+        "ema": "EMA 9/20/50",
+        "sma": "SMA 20/50",
         "vwap": "VWAP",
-        "bollinger": "Bollinger Bands",
-        "rsi": "RSI pane",
-        "macd": "MACD pane",
+        "bollinger": "Bollinger",
+        "rsi": "RSI",
+        "macd": "MACD",
         "volume": "Volume",
         "atr": "ATR",
         "adx": "ADX",
-        "support_resistance": "Support & Resistance",
-        "fibonacci": "Fibonacci Retracement",
-        "fib_extension": "Fibonacci Extension",
+        "support_resistance": "S/R",
+        "fibonacci": "Fib retrace",
+        "fib_extension": "Fib ext",
     }
-    for key, label in labels.items():
-        flags[key] = container.checkbox(label, value=flags[key], key=f"ind_{key}")
+    keys = list(labels)
+    if sidebar:
+        st.sidebar.markdown("### Chart indicators")
+        for key, label in labels.items():
+            flags[key] = st.sidebar.checkbox(label, value=flags[key], key=f"chart_ind_{key}")
+        return flags
+
+    st.markdown("##### Chart filters")
+    st.caption("Turn overlays on or off. These update the candlestick chart.")
+    cols = st.columns(4)
+    for i, key in enumerate(keys):
+        flags[key] = cols[i % 4].checkbox(labels[key], value=flags[key], key=f"chart_ind_{key}")
     return flags
 
 
@@ -427,29 +552,42 @@ def render_main_chart(
     indicators: dict[str, bool],
     scenarios: list | None = None,
     chart_key: str | None = None,
+    interval: str = "5m",
+    window_label: str | None = None,
 ) -> None:
     """Render the professional candlestick chart."""
-    hist = history.load_projection_history(symbol, 40)
-    comparison = history.load_comparison_records(symbol, limit=12)
-    fib_levels = list(fib.retracements.values()) if fib else []
+    c_a, c_b, c_c = st.columns(3)
+    show_levels = c_a.checkbox("Show target & stop lines", value=True, key="chart_show_levels")
+    show_history = c_b.checkbox("Show older predictions on the tape", value=False, key="chart_show_old_preds")
+    show_scenarios = c_c.checkbox("Show bull / bear what-if paths", value=False, key="chart_show_scenarios")
+
+    hist = history.load_projection_history(symbol, 40) if show_history else None
+    comparison = history.load_comparison_records(symbol, limit=12) if show_history else None
+    fib_levels = list(fib.retracements.values()) if fib and indicators.get("fibonacci") else []
     y0, y1 = chart_y_range(df_ist, projection, fib_levels)
+    if primary.target_price:
+        y0 = min(y0, float(primary.target_price) * 0.995)
+        y1 = max(y1, float(primary.target_price) * 1.005)
+    if primary.stop_loss:
+        y0 = min(y0, float(primary.stop_loss) * 0.995)
+        y1 = max(y1, float(primary.stop_loss) * 1.005)
 
-    pred_start = projection.index[0] if projection is not None and len(projection) else None
-    pred_end = projection.index[-1] if projection is not None and len(projection) else None
+    pred_start = None
+    pred_end = None
 
-    # Historical signal markers from stored predictions
     buy_signals, sell_signals, hold_signals = [], [], []
-    for rec in history.load_history(symbol, limit=25):
-        pt = (rec.timestamp, rec.predicted_price)
-        if rec.signal == "BUY":
-            buy_signals.append(pt)
-        elif rec.signal == "SELL":
-            sell_signals.append(pt)
-        else:
-            hold_signals.append(pt)
+    if show_history:
+        for rec in history.load_history(symbol, limit=25):
+            pt = (rec.timestamp, rec.predicted_price)
+            if rec.signal == "BUY":
+                buy_signals.append(pt)
+            elif rec.signal == "SELL":
+                sell_signals.append(pt)
+            else:
+                hold_signals.append(pt)
 
     scenario_series = None
-    if scenarios:
+    if show_scenarios and scenarios:
         scenario_series = {}
         for s in scenarios:
             name = getattr(s, "name", None) or (s.get("name") if isinstance(s, dict) else None)
@@ -458,23 +596,6 @@ def render_main_chart(
                 scenario_series[str(name)] = series
 
     news_markers = None
-    impacts = (primary.raw or {}).get("news_impacts") or []
-    if impacts and len(df_ist):
-        last_ts = df_ist.index[-1]
-        last_px = float(df_ist["Close"].iloc[-1])
-        news_markers = []
-        for n in impacts[:5]:
-            d = n if isinstance(n, dict) else (n.to_dict() if hasattr(n, "to_dict") else {})
-            if not d:
-                continue
-            news_markers.append(
-                {
-                    "time": last_ts,
-                    "price": last_px,
-                    "impact": d.get("impact", "neutral"),
-                    "headline": d.get("headline", "News"),
-                }
-            )
 
     fig = build_trading_chart(
         df_ist=df_ist,
@@ -497,12 +618,17 @@ def render_main_chart(
         predicted_price=primary.predicted_price,
         price_low=primary.price_low,
         price_high=primary.price_high,
+        stop_loss=primary.stop_loss,
         prediction_start=pred_start,
         prediction_end=pred_end,
         comparison_records=comparison,
         scenario_series=scenario_series,
         news_markers=news_markers,
         uirevision=chart_key or f"{symbol}-{today}",
+        interval=interval,
+        show_history=show_history,
+        show_levels=show_levels,
+        show_scenarios=show_scenarios,
     )
     st.plotly_chart(
         fig,
@@ -511,15 +637,28 @@ def render_main_chart(
         config={
             "scrollZoom": not mobile,
             "displayModeBar": not mobile,
-            "modeBarButtonsToAdd": [] if mobile else ["drawline", "drawopenpath", "eraseshape"],
             "displaylogo": False,
             "responsive": True,
         },
     )
-    st.caption(
-        "Candles = market OHLC · Yellow line = AI future prediction · "
-        "Triangles = Buy/Sell · Diamond = Hold · Annotations = pred vs reality"
-    )
+    if window_label:
+        st.caption(window_label)
+    with st.expander("How to read this chart", expanded=True):
+        last_px = float(df_ist["Close"].iloc[-1]) if df_ist is not None and len(df_ist) else 0
+        st.markdown(
+            f"""
+**Candles** are what already traded (green up, red down). Left of the dashed **Now** line is history.
+
+**Gold dashed line** is not a second market — it is a straight-line **guess** from the last close
+(₹{last_px:,.2f}) toward the AI target (₹{primary.predicted_price:,.2f}).
+
+- **BUY** means the model leans higher; watch whether candles follow the gold path.
+- **SELL** means the model leans lower.
+- **HOLD** means no strong setup; the gold path is only a reference.
+
+Horizontal **gold** = target. Horizontal **red dotted** = stop-loss. This is educational analysis, not a profit guarantee.
+"""
+        )
 
 
 def render_prediction_history(symbol: str, history: PredictionHistoryStore) -> None:

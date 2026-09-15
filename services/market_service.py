@@ -97,10 +97,7 @@ class MarketService:
                 return df
 
             df = _ensure_datetime_index(df)
-            if clip and requested_period == "1d" and interval != "1d":
-                sliced = _slice_last_session(df)
-                if not sliced.empty:
-                    df = sliced
+            df = clip_to_requested_window(df, requested_period, interval, force_session=clip)
             df.attrs["resolved_period"] = used_period
             df.attrs["resolved_interval"] = used_interval
             df.attrs["requested_period"] = requested_period
@@ -142,3 +139,56 @@ def _slice_last_session(df: pd.DataFrame) -> pd.DataFrame:
     mask = [pd.Timestamp(t).date() == last_day for t in df.index]
     sliced = df.loc[mask]
     return sliced if not sliced.empty else df
+
+
+_PERIOD_CALENDAR_DAYS = {
+    "1d": 1,
+    "5d": 8,
+    "1mo": 32,
+    "3mo": 95,
+    "6mo": 190,
+    "1y": 370,
+}
+
+
+def clip_to_requested_window(
+    df: pd.DataFrame,
+    period: str,
+    interval: str,
+    *,
+    force_session: bool | None = None,
+) -> pd.DataFrame:
+    """Trim extra Yahoo/fallback bars so the chart matches the selected date filter."""
+    if df is None or df.empty:
+        return df
+    attrs = dict(getattr(df, "attrs", {}) or {})
+    period = (period or "5d").strip()
+    interval = (interval or "5m").strip()
+    clip_session = (
+        bool(force_session)
+        if force_session is not None
+        else (period == "1d" and interval != "1d")
+    )
+    if clip_session:
+        out = _slice_last_session(df)
+        out.attrs.update(attrs)
+        return out
+    if period == "5d":
+        uniq = sorted({pd.Timestamp(t).date() for t in df.index})
+        keep = set(uniq[-5:])
+        out = df.loc[[pd.Timestamp(t).date() in keep for t in df.index]]
+        if out.empty:
+            out = df
+        out.attrs.update(attrs)
+        return out
+    days = _PERIOD_CALENDAR_DAYS.get(period)
+    if not days:
+        df.attrs.update(attrs)
+        return df
+    last = pd.Timestamp(df.index[-1])
+    cutoff = last - pd.Timedelta(days=int(days))
+    out = df.loc[df.index >= cutoff]
+    if out.empty:
+        out = df
+    out.attrs.update(attrs)
+    return out

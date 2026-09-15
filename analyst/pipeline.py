@@ -166,8 +166,14 @@ def run_analyst_pipeline(
     )
 
     # --- 4. Pattern Recognition Agent ---
-    chart_patterns = detect_chart_patterns(df)
-    candle_patterns = detect_candlestick_patterns_rich(df)
+    try:
+        chart_patterns = detect_chart_patterns(df)
+    except Exception:
+        chart_patterns = []
+    try:
+        candle_patterns = detect_candlestick_patterns_rich(df)
+    except Exception:
+        candle_patterns = []
     agent_trace.append(
         _trace(
             "Pattern Recognition Agent",

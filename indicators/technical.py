@@ -58,7 +58,7 @@ def add_volume_indicators(df: pd.DataFrame) -> pd.DataFrame:
         high=high, low=low, close=close, volume=volume
     ).volume_weighted_average_price()
     df["VOL_MA20"] = volume.rolling(20).mean()
-    df["VOL_RATIO"] = volume / df["VOL_MA20"].replace(0, pd.NA)
+    df["VOL_RATIO"] = volume / df["VOL_MA20"].replace(0, float("nan"))
     return df
 
 
@@ -75,10 +75,16 @@ def apply_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return df
     out = df.copy()
-    add_moving_averages(out)
-    add_momentum(out)
-    add_volatility(out)
-    add_trend_strength(out)
-    add_volume_indicators(out)
-    add_trend_label(out)
+    for fn in (
+        add_moving_averages,
+        add_momentum,
+        add_volatility,
+        add_trend_strength,
+        add_volume_indicators,
+        add_trend_label,
+    ):
+        try:
+            fn(out)
+        except Exception:
+            continue
     return out

@@ -5,7 +5,7 @@ venv/
 .env
 .streamlit/secrets.toml
 config/local.json
-data/storage/predictions.json
+data/storage/*.json
 data/storage/tread_user.db
 data/storage/trading_tool.db
 data/storage/*.db

@@ -17,11 +17,12 @@ def apply_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 def _safe_float(val, default: float = 0.0) -> float:
     try:
-        if val is None or (isinstance(val, float) and val != val):
+        if val is None:
             return default
-        if pd.isna(val):
+        x = float(val)
+        if x != x:
             return default
-        return float(val)
+        return x
     except (TypeError, ValueError):
         return default
 
@@ -41,24 +42,24 @@ def build_indicator_context(df: pd.DataFrame) -> dict:
             "open": float(last["Open"]),
             "volume": float(last["Volume"]),
         },
-        "rsi": float(last.get("RSI", 50)),
-        "ema9": float(last.get("EMA9", last["Close"])),
-        "ema20": float(last.get("EMA20", last["Close"])),
-        "ema50": float(last.get("EMA50", last["Close"])),
-        "sma20": float(last.get("SMA20", last["Close"])),
-        "sma50": float(last.get("SMA50", last["Close"])),
-        "macd": float(last.get("MACD", 0)),
-        "macd_signal": float(last.get("MACD_SIGNAL", 0)),
-        "macd_hist": float(last.get("MACD_HIST", 0)),
-        "vwap": float(last.get("VWAP", last["Close"])),
-        "atr": float(last.get("ATR", 1)),
-        "adx": float(last.get("ADX", 0)),
-        "di_plus": float(last.get("DI_PLUS", 0)),
-        "di_minus": float(last.get("DI_MINUS", 0)),
-        "bb_upper": float(last.get("BB_UPPER", last["Close"])),
-        "bb_middle": float(last.get("BB_MIDDLE", last["Close"])),
-        "bb_lower": float(last.get("BB_LOWER", last["Close"])),
-        "vol_ma20": float(last.get("VOL_MA20", last["Volume"])),
+        "rsi": _safe_float(last.get("RSI"), 50.0),
+        "ema9": _safe_float(last.get("EMA9"), float(last["Close"])),
+        "ema20": _safe_float(last.get("EMA20"), float(last["Close"])),
+        "ema50": _safe_float(last.get("EMA50"), float(last["Close"])),
+        "sma20": _safe_float(last.get("SMA20"), float(last["Close"])),
+        "sma50": _safe_float(last.get("SMA50"), float(last["Close"])),
+        "macd": _safe_float(last.get("MACD"), 0.0),
+        "macd_signal": _safe_float(last.get("MACD_SIGNAL"), 0.0),
+        "macd_hist": _safe_float(last.get("MACD_HIST"), 0.0),
+        "vwap": _safe_float(last.get("VWAP"), float(last["Close"])),
+        "atr": _safe_float(last.get("ATR"), 1.0),
+        "adx": _safe_float(last.get("ADX"), 0.0),
+        "di_plus": _safe_float(last.get("DI_PLUS"), 0.0),
+        "di_minus": _safe_float(last.get("DI_MINUS"), 0.0),
+        "bb_upper": _safe_float(last.get("BB_UPPER"), float(last["Close"])),
+        "bb_middle": _safe_float(last.get("BB_MIDDLE"), float(last["Close"])),
+        "bb_lower": _safe_float(last.get("BB_LOWER"), float(last["Close"])),
+        "vol_ma20": _safe_float(last.get("VOL_MA20"), float(last["Volume"])),
         "vol_ratio": _safe_float(last.get("VOL_RATIO"), 1.0),
         "trend_dir": str(last.get("TREND_DIR", "neutral")),
         "fibonacci": fib,

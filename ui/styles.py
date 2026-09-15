@@ -19,10 +19,14 @@ def inject_responsive_css(theme: str = "dark") -> None:
         f"""
         <style>
         html, body, [data-testid="stAppViewContainer"] {{
-            background: {bg} !important;
+            background: radial-gradient(1200px 500px at 10% -10%, rgba(59,130,246,0.16), transparent 55%),
+                        radial-gradient(900px 400px at 100% 0%, rgba(240,185,11,0.08), transparent 50%),
+                        {bg} !important;
             color: {text};
             -webkit-font-smoothing: antialiased;
+            overflow-x: hidden !important;
         }}
+        .stApp {{ overflow-x: hidden; }}
         [data-testid="stToolbar"], .stDeployButton, #MainMenu, footer {{
             visibility: hidden !important;
         }}
@@ -155,14 +159,136 @@ def inject_responsive_css(theme: str = "dark") -> None:
             margin-top: 0.7rem;
             font-size: 0.75rem;
         }}
-        .auth-shell {{
+        .brand-mark {{
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            font-size: 0.95rem;
+        }}
+        .brand-sub {{ color: {muted}; font-size: 0.75rem; }}
+        .hello-line {{
+            font-size: 1.35rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }}
+        .hello-sub {{ color: {muted}; font-size: 0.8rem; margin-top: 0.15rem; }}
+        .signal-hero {{
+            background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015));
+            border: 1px solid {border};
+            border-left-width: 6px;
+            border-radius: 18px;
+            padding: 1.05rem 1.15rem 0.35rem;
+            margin: 0.2rem 0 0.65rem;
+        }}
+        .sentiment-card {{
             text-align: center;
-            padding: 1.2rem 0 0.4rem;
+            padding: 0.4rem 0 0.2rem;
+        }}
+        .sentiment-score {{
+            font-size: 2.4rem;
+            font-weight: 800;
+            line-height: 1;
+        }}
+        .sentiment-tilt {{
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            font-size: 0.78rem;
+            font-weight: 700;
+            margin: 0.25rem 0 0.45rem;
+        }}
+        .sentiment-copy {{
+            color: {muted};
+            font-size: 0.85rem;
+            line-height: 1.45;
+            text-align: left;
+        }}
+        .desk-hero {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.45rem;
+        }}
+        .desk-live-pill {{
+            font-size: 0.68rem;
+            letter-spacing: 0.14em;
+            font-weight: 700;
+            color: #0b1220;
+            background: linear-gradient(90deg, #26a69a, #3b82f6);
+            padding: 0.35rem 0.7rem;
+            border-radius: 999px;
+            white-space: nowrap;
+        }}
+        .desk-toolbar-label {{
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: {muted};
+            margin: 0.35rem 0 0.15rem;
+        }}
+        .ticker-wrap {{
+            overflow: hidden;
+            border: 1px solid {border};
+            border-radius: 10px;
+            background: {panel};
+            margin: 0.2rem 0 0.85rem;
+            padding: 0.45rem 0;
+        }}
+        .ticker-tape {{
+            display: inline-block;
+            white-space: nowrap;
+            color: {muted};
+            font-size: 0.78rem;
+            letter-spacing: 0.08em;
+            animation: ticker 28s linear infinite;
+            padding-left: 100%;
+        }}
+        @keyframes ticker {{
+            0% {{ transform: translateX(0); }}
+            100% {{ transform: translateX(-100%); }}
+        }}
+        .auth-hero {{
+            padding: 1.4rem 0.4rem 1rem;
+        }}
+        .auth-kicker {{
+            font-size: 0.72rem;
+            letter-spacing: 0.16em;
+            color: {accent};
+            font-weight: 700;
         }}
         .auth-brand {{
-            font-size: 2rem;
+            font-size: 3rem;
             font-weight: 800;
+            letter-spacing: 0.02em;
+            line-height: 1.05;
+            margin: 0.25rem 0 0.6rem;
+        }}
+        .auth-lead {{
+            color: {text};
+            opacity: 0.9;
+            font-size: 1.05rem;
+            line-height: 1.5;
+            max-width: 28rem;
+        }}
+        .auth-pills span {{
+            display: inline-block;
+            margin: 0.2rem 0.35rem 0.2rem 0;
+            padding: 0.28rem 0.65rem;
+            border-radius: 999px;
+            border: 1px solid {border};
+            background: {panel};
+            font-size: 0.75rem;
             letter-spacing: 0.04em;
+        }}
+        .auth-points {{
+            color: {muted};
+            line-height: 1.65;
+            padding-left: 1.1rem;
+            margin-top: 1rem;
+        }}
+        .auth-card-title {{
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin-bottom: 0.15rem;
         }}
         .auth-tag {{ color: {muted}; margin-top: 0.25rem; }}
         .captcha-wrap {{
@@ -175,40 +301,103 @@ def inject_responsive_css(theme: str = "dark") -> None:
             font-weight: 600;
             min-height: 2.6rem;
         }}
-        .stTextInput input, .stSelectbox div[data-baseweb="select"] {{
+        .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {{
             font-size: 16px !important;
         }}
-        .js-plotly-plot, .plotly {{
+        .js-plotly-plot, .plotly, .stPlotlyChart, [data-testid="stPlotlyChart"] {{
             max-width: 100% !important;
+            width: 100% !important;
+            overflow: hidden !important;
         }}
         [data-testid="stDataFrame"] {{
             overflow-x: auto;
+            max-width: 100%;
         }}
         a {{ color: {accent} !important; }}
         .stCheckbox label span {{ color: {text} !important; }}
+        [data-testid="stHorizontalBlock"] {{
+            flex-wrap: wrap !important;
+            row-gap: 0.55rem !important;
+        }}
+        [data-testid="stHorizontalBlock"] > div {{
+            min-width: 0 !important;
+        }}
+        div[data-testid="stTabs"] [data-baseweb="tab-list"] {{
+            flex-wrap: wrap;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }}
+        div[data-testid="stRadio"] [role="radiogroup"] {{
+            flex-wrap: wrap !important;
+            gap: 0.35rem 0.6rem !important;
+        }}
+        button, [data-testid="baseButton-secondary"], [data-testid="baseButton-primary"] {{
+            min-height: 44px;
+        }}
+        [data-testid="stPopover"] button {{ min-height: 44px; }}
 
+        @media (max-width: 1100px) {{
+            .block-container {{ max-width: 100%; }}
+            .hello-line {{ font-size: 1.15rem; }}
+        }}
+        @media (min-width: 641px) and (max-width: 1024px) {{
+            .block-container {{
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+            }}
+            [data-testid="stHorizontalBlock"] > div {{
+                flex: 1 1 calc(50% - 0.5rem) !important;
+                min-width: min(100%, 220px) !important;
+            }}
+            .smart-signal {{ font-size: 1.85rem; }}
+        }}
         @media (max-width: 900px) {{
             .block-container {{
-                padding: 0.55rem 0.7rem 5rem !important;
+                padding: 0.55rem 0.7rem 5.5rem !important;
                 max-width: 100%;
             }}
             .terminal-title {{ font-size: 1.15rem; }}
             .smart-signal {{ font-size: 1.7rem; }}
             .ai-pred {{ font-size: 1.35rem; }}
+            .hello-line {{ font-size: 1.05rem; }}
+            .hello-sub {{ display: none; }}
+            .brand-mark {{ font-size: 0.82rem; letter-spacing: 0.1em; }}
             [data-testid="stMetric"] {{ padding: 0.55rem 0.6rem; }}
             [data-testid="stHorizontalBlock"] {{
                 gap: 0.5rem !important;
             }}
             div[data-testid="stTabs"] button {{
                 padding: 0.4rem 0.65rem !important;
-            }}
-            button, [data-testid="baseButton-secondary"], [data-testid="baseButton-primary"] {{
                 min-height: 44px;
             }}
+            .modebar {{ transform: scale(0.9); transform-origin: top right; }}
         }}
-        @media (max-width: 480px) {{
+        @media (max-width: 640px) {{
+            [data-testid="stHorizontalBlock"] > div {{
+                flex: 1 1 100% !important;
+                min-width: 100% !important;
+            }}
             .smart-grid {{ grid-template-columns: 1fr 1fr; }}
             .auth-brand {{ font-size: 1.65rem; }}
+            .auth-hero {{ padding-top: 0.2rem; }}
+            .signal-hero {{ padding: 0.85rem 0.85rem 0.2rem; }}
+            .sentiment-score {{ font-size: 2rem; }}
+            [data-testid="stSidebar"] {{
+                min-width: min(86vw, 320px) !important;
+            }}
+            div[data-testid="stVerticalBlock"] > div {{
+                max-width: 100%;
+            }}
+        }}
+        @media (min-width: 1441px) {{
+            .block-container {{ max-width: 1440px; }}
+        }}
+        @media (orientation: landscape) and (max-height: 500px) {{
+            .block-container {{ padding-top: 0.4rem !important; }}
+            .hello-line {{ font-size: 1rem; }}
+        }}
+        @media (prefers-reduced-motion: reduce) {{
+            .ticker-tape {{ animation: none; padding-left: 0.6rem; }}
         }}
         @supports (padding: max(0px)) {{
             .block-container {{

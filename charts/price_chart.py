@@ -34,14 +34,24 @@ DEFAULT_INDICATORS: IndicatorFlags = {
     "sma": False,
     "vwap": True,
     "bollinger": False,
-    "rsi": True,
+    "rsi": False,
     "macd": False,
     "volume": True,
     "atr": False,
     "adx": False,
-    "support_resistance": True,
-    "fibonacci": True,
+    "support_resistance": False,
+    "fibonacci": False,
     "fib_extension": False,
+}
+
+_INTERVAL_STEP = {
+    "1m": pd.Timedelta(minutes=1),
+    "2m": pd.Timedelta(minutes=2),
+    "5m": pd.Timedelta(minutes=5),
+    "15m": pd.Timedelta(minutes=15),
+    "30m": pd.Timedelta(minutes=30),
+    "1h": pd.Timedelta(hours=1),
+    "1d": pd.Timedelta(days=1),
 }
 
 
@@ -58,25 +68,36 @@ def _future_projection_from_last(
     df_ist: pd.DataFrame,
     projection: pd.Series | None,
 ) -> pd.Series | None:
-    """
-    Ensure future prediction starts exactly at the last candle close
-    and only extends into future timestamps (no historical overlap).
-    """
+    """Keep only timestamps after the last candle so the guess never covers history."""
     if projection is None or len(projection) == 0 or df_ist.empty:
-        return projection
+        return None
     last_ts = df_ist.index[-1]
     last_px = float(df_ist["Close"].iloc[-1])
-    future = projection[projection.index > last_ts].copy()
+    try:
+        future = projection[projection.index > last_ts].astype(float)
+    except Exception:
+        return None
     if future.empty:
-        # Keep path but force anchor at last candle
-        idx = projection.index
-        vals = projection.astype(float).values.copy()
-        if len(vals):
-            vals[0] = last_px
-        return pd.Series(vals, index=idx, name="projection")
-    # Prepend anchor at last candle
+        return None
     anchor = pd.Series([last_px], index=[last_ts], name="projection")
-    return pd.concat([anchor, future.astype(float)])
+    return pd.concat([anchor, future])
+
+
+def forecast_path_from_last_bar(
+    df_ist: pd.DataFrame,
+    end_price: float,
+    interval: str,
+    bars: int = 12,
+) -> pd.Series | None:
+    """Straight path from the last close into the next few bars of this timeframe."""
+    if df_ist is None or df_ist.empty:
+        return None
+    last_ts = df_ist.index[-1]
+    last_px = float(df_ist["Close"].iloc[-1])
+    step = _INTERVAL_STEP.get(interval, pd.Timedelta(minutes=5))
+    idx = [last_ts + step * i for i in range(0, max(bars, 2) + 1)]
+    vals = np.linspace(last_px, float(end_price), len(idx))
+    return pd.Series(vals, index=pd.DatetimeIndex(idx), name="projection")
 
 
 def _confidence_bands(
@@ -163,6 +184,7 @@ def build_trading_chart(
     predicted_price: float | None = None,
     price_low: float | None = None,
     price_high: float | None = None,
+    stop_loss: float | None = None,
     prediction_start: datetime | None = None,
     prediction_end: datetime | None = None,
     comparison_records: list[dict[str, Any]] | None = None,
@@ -170,6 +192,10 @@ def build_trading_chart(
     scenario_series: dict[str, pd.Series] | None = None,
     news_markers: list[dict[str, Any]] | None = None,
     uirevision: str | None = None,
+    interval: str = "5m",
+    show_history: bool = False,
+    show_levels: bool = True,
+    show_scenarios: bool = False,
 ) -> go.Figure:
     """
     Build a professional multi-pane candlestick trading chart.
@@ -186,7 +212,7 @@ def build_trading_chart(
         flags["rsi"] = bool(show_rsi)
 
     rows, heights, titles = _subplot_layout(flags)
-    h = 520 if mobile else 780
+    h = 440 if mobile else 680
 
     fig = make_subplots(
         rows=rows,
@@ -221,7 +247,7 @@ def build_trading_chart(
                 high=df_ist["High"],
                 low=df_ist["Low"],
                 close=df_ist["Close"],
-                name="OHLC",
+                name="Market candles",
                 increasing_line_color=theme["candle_up"],
                 decreasing_line_color=theme["candle_down"],
                 increasing_fillcolor=theme["candle_up"],
@@ -364,8 +390,8 @@ def build_trading_chart(
                 col=1,
             )
 
-    # --- Past predictions (faint) ---
-    if hist_predictions is not None and not hist_predictions.empty:
+    # --- Past predictions (off unless asked — they clutter the live tape) ---
+    if show_history and hist_predictions is not None and not hist_predictions.empty:
         hp = hist_predictions.copy()
         if "run_time" in hp.columns and "target_time" in hp.columns:
             runs = hp["run_time"].unique()[-(8 if mobile else 16):]
@@ -393,7 +419,7 @@ def build_trading_chart(
         "bearish": dict(color="#ef5350", dash="dot", width=1.6),
         "neutral": dict(color=theme["muted"], dash="dash", width=1.3),
     }
-    if scenario_series:
+    if show_scenarios and scenario_series:
         for name, series in scenario_series.items():
             if series is None or len(series) == 0:
                 continue
@@ -422,6 +448,11 @@ def build_trading_chart(
 
     # --- Future prediction + confidence bands ---
     proj = _future_projection_from_last(df_ist, current_pred)
+    if (proj is None or len(proj) < 2) and predicted_price and len(df_ist):
+        proj = forecast_path_from_last_bar(df_ist, float(predicted_price), interval)
+    elif proj is not None and len(proj) > 16:
+        # Session-long 5m grids drown daily/hourly charts — shorten to this timeframe.
+        proj = forecast_path_from_last_bar(df_ist, float(predicted_price or proj.iloc[-1]), interval)
     if proj is not None and len(proj) > 0:
         bands = _confidence_bands(proj, price_low, price_high, confidence)
         if bands is not None:
@@ -456,10 +487,10 @@ def build_trading_chart(
             go.Scatter(
                 x=proj.index,
                 y=proj.values,
-                name="AI future prediction",
+                name="AI next path (guess)",
                 mode="lines",
-                line=dict(color=theme["pred_future"], width=3, dash="solid"),
-                hovertemplate="AI pred: ₹%{y:.2f}<extra></extra>",
+                line=dict(color=theme["pred_future"], width=3, dash="dash"),
+                hovertemplate="AI guess: ₹%{y:.2f}<extra></extra>",
             ),
             row=price_row,
             col=1,
@@ -480,15 +511,53 @@ def build_trading_chart(
                     color=[theme["live"], theme["pred_future"]],
                     line=dict(width=1, color=theme["text"]),
                 ),
-                text=["Start", f"End ₹{end_px:,.2f}"],
-                textposition=["top center", "top right"],
-                textfont=dict(size=10, color=theme["text"]),
-                name="Pred window",
+                text=["Now", f"Target ₹{end_px:,.2f}"],
+                textposition=["bottom center", "top right"],
+                textfont=dict(size=11, color=theme["text"]),
+                name="Now → target",
                 hovertemplate="%{text}<br>%{x}<br>₹%{y:.2f}<extra></extra>",
             ),
             row=price_row,
             col=1,
         )
+
+    if show_levels and len(df_ist):
+        last_ts = df_ist.index[-1]
+        fig.add_vline(
+            x=last_ts,
+            line_dash="dash",
+            line_width=1,
+            line_color=theme["muted"],
+            opacity=0.7,
+            row=price_row,
+            col=1,
+        )
+        if predicted_price:
+            fig.add_hline(
+                y=float(predicted_price),
+                line_dash="dash",
+                line_color=theme["pred_future"],
+                line_width=1.4,
+                annotation_text=f"AI target ₹{float(predicted_price):,.2f}",
+                annotation_position="right",
+                annotation_font_size=11,
+                annotation_font_color=theme["pred_future"],
+                row=price_row,
+                col=1,
+            )
+        if stop_loss:
+            fig.add_hline(
+                y=float(stop_loss),
+                line_dash="dot",
+                line_color=theme["sell"],
+                line_width=1.4,
+                annotation_text=f"Stop ₹{float(stop_loss):,.2f}",
+                annotation_position="right",
+                annotation_font_size=11,
+                annotation_font_color=theme["sell"],
+                row=price_row,
+                col=1,
+            )
 
     # --- Signal markers ---
     def _add_markers(points, name, symbol, color):
@@ -512,7 +581,9 @@ def build_trading_chart(
             col=1,
         )
 
-    # Current signal at last candle if no explicit lists
+    # Only the latest idea on the last candle unless the user asks for history
+    if not show_history:
+        buy_signals = sell_signals = hold_signals = None
     if not buy_signals and not sell_signals and not hold_signals and signal and len(df_ist):
         pt = (df_ist.index[-1], float(df_ist["Close"].iloc[-1]))
         if signal == "BUY":
@@ -527,7 +598,7 @@ def build_trading_chart(
     _add_markers(hold_signals, "Hold", "diamond", theme["hold"])
 
     # --- News event markers ---
-    if news_markers:
+    if show_history and news_markers:
         xs, ys, texts, colors = [], [], [], []
         for m in news_markers[:8]:
             ts = m.get("time") or (df_ist.index[-1] if len(df_ist) else None)
@@ -559,7 +630,7 @@ def build_trading_chart(
             )
 
     # --- Compare prediction vs reality annotations ---
-    if comparison_records:
+    if show_history and comparison_records:
         for rec in comparison_records[-12:]:
             ts = pd.to_datetime(rec.get("timestamp"))
             pred_px = rec.get("predicted_price")
@@ -710,18 +781,19 @@ def build_trading_chart(
         plot_bgcolor=theme["plot_bg"],
         font=dict(family="IBM Plex Sans, Segoe UI, sans-serif", size=11 if mobile else 12, color=theme["text"]),
         height=h,
-        margin=dict(t=40 if mobile else 48, l=8, r=64, b=40),
-        legend=dict(
+        margin=dict(t=36 if mobile else 48, l=4, r=28 if mobile else 56, b=36 if mobile else 40),
+legend=dict(
             orientation="h",
             y=1.02,
             x=0,
             bgcolor="rgba(0,0,0,0)" if theme["name"] == "dark" else "rgba(255,255,255,0)",
-            font=dict(size=10),
+            font=dict(size=9 if mobile else 10),
+            itemwidth=40,
         ),
         hovermode="x unified",
         dragmode="pan",
         uirevision=uirevision or "angad-chart",
-        transition={"duration": 280, "easing": "cubic-in-out"},
+        transition={"duration": 0},
         xaxis_rangeslider_visible=False,
         spikedistance=-1,
     )
@@ -759,15 +831,24 @@ def build_trading_chart(
             col=1,
         )
 
-    # Bottom time scale + rangeslider on last x-axis only for non-mobile
+    # Bottom time scale — no rangeslider (it kept stale date windows after filter changes)
     fig.update_xaxes(
         title_text="Time (IST)",
-        rangeslider_visible=not mobile,
-        rangeslider_thickness=0.05,
+        rangeslider_visible=False,
         row=rows,
         col=1,
     )
     fig.update_yaxes(title_text="Price (₹)", row=price_row, col=1)
+
+    x_left = df_ist.index[0] if len(df_ist) else None
+    x_right = df_ist.index[-1] if len(df_ist) else None
+    if proj is not None and len(proj):
+        x_right = proj.index[-1]
+        if x_left is None:
+            x_left = proj.index[0]
+    if x_left is not None and x_right is not None:
+        pad = (pd.Timestamp(x_right) - pd.Timestamp(x_left)) * 0.03
+        fig.update_xaxes(range=[pd.Timestamp(x_left) - pad, pd.Timestamp(x_right) + pad])
 
     if y0 is not None and y1 is not None:
         fig.update_yaxes(range=[y0, y1], row=price_row, col=1)
@@ -787,7 +868,7 @@ def build_trading_chart(
             yref="paper",
             x=0.01,
             y=0.98,
-            text=f"{signal} · {confidence:.0f}% conf",
+            text=f"{signal} · {confidence:.0f}% conf  ·  gold dash = next-path guess",
             showarrow=False,
             font=dict(
                 size=13,
