@@ -13,16 +13,19 @@ from workers.orchestrator import run_until_blocked
 
 def render_desk_chat(user: dict, analysis: dict[str, Any] | None, symbol: str) -> None:
     st.markdown("##### AI desk chat")
-    st.caption("Answers use this session’s analysis, SQLite prediction history, and worker tasks — not a generic chatbot.")
+    st.caption("Answers use internal APIs, daily free-market bars, stored predictions, and worker tasks.")
     uid = int(user["user_id"])
     for msg in desk_chat.load_messages(uid):
-        with st.chat_message(msg["Role"]):
+        role = str(msg.get("Role") or "assistant").strip().lower()
+        if role not in ("user", "assistant"):
+            role = "assistant" if role != "human" else "user"
+        if role == "human":
+            role = "user"
+        with st.chat_message("user" if role == "user" else "assistant"):
             st.markdown(msg["Content"])
     prompt = st.chat_input("Ask about trend, HOLD, risk, history, or send a worker task…")
     if prompt:
-        desk_chat.save_message(uid, "user", prompt, symbol)
-        reply = desk_chat.answer(user_id=uid, text=prompt, analysis=analysis, symbol=symbol)
-        desk_chat.save_message(uid, "assistant", reply, symbol)
+        desk_chat.answer(user_id=uid, text=prompt, analysis=analysis, symbol=symbol)
         st.rerun()
 
 

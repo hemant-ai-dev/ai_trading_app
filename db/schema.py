@@ -208,13 +208,25 @@ SCHEMA_STATEMENTS = [
         FOREIGN KEY (UserId) REFERENCES TReadUser (UserId)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS TApiToken (
+        TokenId INTEGER PRIMARY KEY AUTOINCREMENT,
+        UserId INTEGER NOT NULL,
+        TokenHash TEXT NOT NULL UNIQUE,
+        Label TEXT,
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        ExpiresAt TEXT NOT NULL,
+        LastUsedAt TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS IX_TApiToken_User ON TApiToken (UserId, ExpiresAt)",
 ]
 
 API_SEED = [
     (
         "yfinance",
         "Yahoo Finance (yfinance)",
-        "OHLCV candles and last price for charts, indicators, and Smart Box.",
+        "Daily OHLCV from free Yahoo Finance (not a live exchange feed).",
         "Market data",
         "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
         1,
@@ -232,8 +244,8 @@ API_SEED = [
         "Market data",
         "https://stooq.com/q/d/l/?s={symbol}&i=d",
         1,
-        "Public CSV download. No API key. Coverage for NSE tickers is limited.",
-        "No published request quota. Daily bars only — no 1-minute charts.",
+        "Public CSV download. No API key. Daily bars only — used as Yahoo fallback.",
+        "No published request quota. Daily bars only.",
         0,
         1,
         None,
@@ -294,5 +306,33 @@ API_SEED = [
         1,
         None,
         60,
+    ),
+    (
+        "angad_internal",
+        "Angad internal trading API",
+        "Versioned /api/v1 services for quote, history, analysis, chat, and tasks.",
+        "Internal API",
+        "/api/v1",
+        1,
+        "First-party FastAPI layer. No third-party keys are returned to clients.",
+        "60 authenticated requests per minute per token.",
+        0,
+        1,
+        None,
+        5,
+    ),
+    (
+        "angad_knowledge",
+        "Angad trading knowledge (RAG)",
+        "Local markdown search for risk, indicators, data limits, and paper workers.",
+        "Trading knowledge",
+        "local://knowledge.search",
+        1,
+        "On-device TF-IDF / hybrid search. No paid embedding vendor.",
+        "Unlimited local compute.",
+        0,
+        1,
+        None,
+        6,
     ),
 ]

@@ -19,7 +19,7 @@
   "market_data": {
     "provider": "yfinance",
     "yfinance": {
-      "cache_ttl_seconds": 45
+      "cache_ttl_seconds": 180
     }
   },
   "storage": {

@@ -7,3 +7,6 @@ yfinance>=0.2.18
 ta>=0.11.0
 bcrypt>=4.0.0
 pandas-market-calendars>=4.4.0
+fastapi>=0.110.0
+uvicorn>=0.27.0
+python-multipart>=0.0.9

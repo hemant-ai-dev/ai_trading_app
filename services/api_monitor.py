@@ -152,7 +152,7 @@ def usage_summary() -> list[dict[str, Any]]:
         SELECT
             p.ApiId, p.ApiCode, p.ApiName, p.Purpose, p.Category, p.Endpoint,
             p.IsFree, p.PricingNote, p.FreeUsageLimit, p.RequiresApiKey, p.IsEnabled,
-            p.FallbackApiCode,
+            p.FallbackApiCode, IFNULL(p.ApiType, 'external') AS ApiType,
             IFNULL(d.SuccessCount, 0) AS TodaySuccess,
             IFNULL(d.FailureCount, 0) AS TodayFailure,
             IFNULL(d.SuccessCount, 0) + IFNULL(d.FailureCount, 0) AS TodayUsage,

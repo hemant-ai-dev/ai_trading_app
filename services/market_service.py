@@ -23,8 +23,8 @@ class MarketService:
     @staticmethod
     def normalize_period_interval(period: str, interval: str) -> tuple[str, str]:
         """Keep the user's period when possible; swap interval if Yahoo cannot serve it."""
-        period = (period or "5d").strip()
-        interval = (interval or "5m").strip()
+        period = (period or "3mo").strip()
+        interval = (interval or "1d").strip()
         allowed = PERIOD_INTERVALS.get(period)
         if allowed and interval not in allowed:
             interval = default_interval(period)
@@ -33,22 +33,22 @@ class MarketService:
             if interval in intervals_for_period("5d"):
                 period = "5d"
             else:
-                period, interval = "1mo", "1d"
+                period, interval = "3mo", "1d"
         return period, interval
 
     def _cache_ttl(self, interval: str) -> int:
         base = int(self.settings.get("market_data", {}).get("yfinance", {}).get("cache_ttl_seconds", 45))
         if interval in ("1m", "2m"):
             return min(base, 20)
-        if interval == "5m":
-            return min(base, 30)
+        if interval == "1d":
+            return max(base, 120)
         return base
 
     def get_ohlcv(
         self,
         symbol: str,
-        period: str = "5d",
-        interval: str = "5m",
+        period: str = "3mo",
+        interval: str = "1d",
         *,
         clip_to_session: bool | None = None,
     ) -> pd.DataFrame:
@@ -56,7 +56,7 @@ class MarketService:
         clip = (
             bool(clip_to_session)
             if clip_to_session is not None
-            else (requested_period == "1d" and interval != "1d")
+            else False
         )
         cache_key = f"ohlcv|{symbol}|{requested_period}|{interval}|clip={int(clip)}"
 
@@ -162,12 +162,12 @@ def clip_to_requested_window(
     if df is None or df.empty:
         return df
     attrs = dict(getattr(df, "attrs", {}) or {})
-    period = (period or "5d").strip()
-    interval = (interval or "5m").strip()
+    period = (period or "3mo").strip()
+    interval = (interval or "1d").strip()
     clip_session = (
         bool(force_session)
         if force_session is not None
-        else (period == "1d" and interval != "1d")
+        else False
     )
     if clip_session:
         out = _slice_last_session(df)

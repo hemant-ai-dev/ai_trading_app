@@ -53,7 +53,7 @@ def market(ctx: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "status": "failed", "detail": "No symbol to fetch.", "halt": True}
     svc: MarketService = ctx["market"]
     px = svc.get_latest_price(symbol)
-    df = svc.get_ohlcv(symbol, "5d", "5m")
+    df = svc.get_ohlcv(symbol, "3mo", "1d")
     last = float(df["Close"].iloc[-1]) if df is not None and not df.empty else px
     payload = {
         "symbol": symbol,
@@ -100,7 +100,7 @@ def analysis(ctx: dict[str, Any]) -> dict[str, Any]:
     symbol = (task or {}).get("Symbol")
     if not analysis_svc or not symbol:
         return {"ok": True, "status": "done", "detail": "Analysis skipped (no desk service in this context)."}
-    result = analysis_svc.analyze(symbol=symbol, period="5d", interval="5m", use_genai=False, include_world_news=False)
+    result = analysis_svc.analyze(symbol=symbol, period="3mo", interval="1d", use_genai=False, include_world_news=False)
     if result.get("error"):
         return {"ok": True, "status": "done", "detail": f"Analysis unavailable: {result['error']}"}
     primary = result["primary"]

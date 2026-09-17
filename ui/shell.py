@@ -35,7 +35,7 @@ def render_app_chrome(user: dict) -> str:
     if st.session_state.get("workspace_nav") in _legacy:
         st.session_state["workspace_nav"] = _legacy[st.session_state["workspace_nav"]]
 
-    nav_opts = ["Strategy", "Workers", "APIs"]
+    nav_opts = ["Strategy", "AI Chat", "Workers", "APIs"]
     if user.get("role") == "Admin":
         nav_opts.append("Users")
 
@@ -43,7 +43,7 @@ def render_app_chrome(user: dict) -> str:
     with brand:
         st.markdown(
             '<div class="brand-mark">ANGAD AI</div>'
-            '<div class="brand-sub">Two-portal desk</div>',
+            '<div class="brand-sub">Daily AI trading desk</div>',
             unsafe_allow_html=True,
         )
     with greet:
@@ -72,6 +72,6 @@ def render_app_chrome(user: dict) -> str:
         nav_opts,
         horizontal=True,
         key="workspace_nav",
-        help="Strategy = market AI desk. Workers = task control center.",
+        help="Strategy = daily market desk. AI Chat = tool-using assistant. Workers = paper tasks.",
     )
     return workspace

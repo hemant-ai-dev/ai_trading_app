@@ -146,8 +146,14 @@ def authenticate(username: str, password: str) -> tuple[UserRecord | None, str |
     if not int(row.get("IsActive", 1)):
         return None, "This account is inactive."
     row["LastLoginAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    upsert_user(row)
-    _mirror_sqlite(row)
+    try:
+        upsert_user(row)
+    except OSError:
+        pass
+    try:
+        _mirror_sqlite(row)
+    except Exception:
+        pass
     return _row_user(row), None
 
 

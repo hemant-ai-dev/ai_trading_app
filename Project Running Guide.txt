@@ -120,6 +120,20 @@ pip install -r requirements.txt
 
 ---
 
+# Internal API (optional)
+
+Daily free-market data only (Yahoo + Stooq fallback). Docs: `docs/INTERNAL_API.md`
+
+```bash
+python -m api.serve
+```
+
+Swagger UI: http://127.0.0.1:8765/docs  (also /api/docs)
+
+Streamlit **AI Chat** uses the same in-process gateway even if port 8765 is not public.
+
+---
+
 # Final Note
 
 Run locally first, test changes, then deploy online.

@@ -399,6 +399,36 @@ def inject_responsive_css(theme: str = "dark") -> None:
         @media (prefers-reduced-motion: reduce) {{
             .ticker-tape {{ animation: none; padding-left: 0.6rem; }}
         }}
+        .chat-hero {{
+            background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.5));
+            border: 1px solid {border};
+            border-radius: 18px;
+            padding: 1.1rem 1.2rem 1rem;
+            margin-bottom: 0.85rem;
+        }}
+        .chat-hero h1 {{
+            margin: 0;
+            font-size: 1.55rem;
+            letter-spacing: -0.03em;
+        }}
+        .chat-hero p {{
+            margin: 0.35rem 0 0;
+            color: {muted};
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }}
+        .chat-chip-row {{ display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.55rem 0 0.2rem; }}
+        div[data-testid="stChatMessage"] {{
+            background: {panel};
+            border: 1px solid {border};
+            border-radius: 16px;
+            padding: 0.15rem 0.35rem;
+            margin-bottom: 0.55rem;
+        }}
+        [data-testid="stChatInput"] {{
+            border: 1px solid rgba(59,130,246,0.45) !important;
+            border-radius: 16px !important;
+        }}
         @supports (padding: max(0px)) {{
             .block-container {{
                 padding-left: max(0.7rem, env(safe-area-inset-left)) !important;

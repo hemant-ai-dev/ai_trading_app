@@ -30,8 +30,8 @@ class AnalysisService:
     def analyze(
         self,
         symbol: str,
-        period: str = "5d",
-        interval: str = "5m",
+        period: str = "3mo",
+        interval: str = "1d",
         use_genai: bool = True,
         include_world_news: bool = True,
         user_id: int | None = None,

@@ -41,10 +41,14 @@ def _probe(url: str, timeout: float = 8.0) -> tuple[bool, str]:
 def render_api_management(_user: dict) -> None:
     st.markdown('<div class="terminal-title">API Management</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="terminal-sub">Free data sources only · secrets stay in env / Streamlit secrets · not a profit guarantee</div>',
+        '<div class="terminal-sub">Free daily data + internal APIs · secrets stay in env / Streamlit secrets · not a profit guarantee</div>',
         unsafe_allow_html=True,
     )
     st.caption(f"SQLite: `{db_path()}`")
+    st.caption("User logins: `data/users.xlsx` (Username, Email, bcrypt PasswordHash — never the original password).")
+    s1, s2 = st.columns(2)
+    s1.link_button("Open Swagger UI", "http://127.0.0.1:8765/docs", use_container_width=True)
+    s2.link_button("Open ReDoc", "http://127.0.0.1:8765/redoc", use_container_width=True)
 
     try:
         rows = usage_summary()
@@ -86,6 +90,7 @@ def render_api_management(_user: dict) -> None:
                 </div>
                 <div style="text-align:right">
                   <div style="color:{color};font-weight:800;letter-spacing:0.06em">{status.upper()}</div>
+                  <div>Type: <b>{(row.get("ApiType") or "external").title()}</b></div>
                   <div>Free / Paid: <b>{"Free" if row.get("IsFree") else "Paid (not used)"}</b></div>
                 </div>
               </div>
@@ -94,6 +99,8 @@ def render_api_management(_user: dict) -> None:
                 <div><b>Free usage limit:</b> {row.get("FreeUsageLimit")}</div>
                 <div><b>Current usage (today):</b> {used} ({ok} ok / {fail} failed)</div>
                 <div><b>Remaining requests:</b> {NOT_PROVIDED}</div>
+                <div><b>Fallback:</b> {row.get("FallbackApiCode") or "none"}</div>
+                <div><b>Data freshness:</b> {_fmt_dt(row.get("LastSuccessUtc"))}</div>
                 <div><b>Last successful request:</b> {_fmt_dt(row.get("LastSuccessUtc"))}</div>
                 <div><b>Latest error:</b> {row.get("LastError") or "—"}</div>
                 <div><b>Configuration:</b> {key_state}</div>
@@ -149,9 +156,9 @@ def _run_health_check(api_code: str, endpoint: str) -> None:
         "nyt_rss": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
     }
     t0 = datetime.now(timezone.utc)
-    if api_code == "local_ta":
-        log_usage("local_ta", operation="health_check", success=True, endpoint=endpoint, http_status=200, response_ms=1)
-        st.success("Local indicators are available (no network).")
+    if api_code in ("local_ta", "angad_internal", "angad_knowledge"):
+        log_usage(api_code, operation="health_check", success=True, endpoint=endpoint, http_status=200, response_ms=1)
+        st.success(f"{api_code}: local service available (no third-party key).")
         return
     url = probes.get(api_code) or endpoint.split("{")[0] or endpoint
     ok, msg = _probe(url)

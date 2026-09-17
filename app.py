@@ -20,7 +20,9 @@ from config.timeframes import PERIODS, TIMEFRAME_PRESETS, default_interval, inte
 from prediction.history_store import PredictionHistoryStore
 from services.analysis_service import AnalysisService
 from ui.admin_users import render_user_management
+from ui.ai_chat import render_ai_trading_chat
 from ui.api_status import render_api_management
+from api.serve import start_background_server
 from ui.auth_pages import render_auth_gate
 from ui.chat_panel import render_desk_chat, render_task_composer
 from ui.portal_workers import render_workers_portal
@@ -71,6 +73,7 @@ st.set_page_config(
 if "settings" not in st.session_state:
     st.session_state["settings"] = load_settings()
 initialize()
+start_background_server()
 ANALYSIS_SERVICE_VERSION = 2
 if (
     "analysis" not in st.session_state
@@ -151,6 +154,9 @@ if user.get("must_change_password"):
 
 if workspace in ("APIs", "API Management"):
     render_api_management(user)
+    st.stop()
+if workspace in ("AI Chat",):
+    render_ai_trading_chat(user)
     st.stop()
 if workspace in ("Users", "User Management"):
     render_user_management(user)
