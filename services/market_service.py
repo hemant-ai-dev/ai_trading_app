@@ -105,6 +105,27 @@ class MarketService:
 
         return APP_CACHE.get_or_set(cache_key, self._cache_ttl(interval), _fetch)
 
+    def get_session_ohlcv(self, symbol: str) -> pd.DataFrame:
+        """Free Yahoo 5-minute bars for the live session overlay. Empty if unavailable."""
+        cache_key = f"ohlcv|{symbol}|session|5m"
+
+        def _fetch() -> pd.DataFrame:
+            for p, iv in (("1d", "5m"), ("5d", "5m"), ("5d", "15m")):
+                try:
+                    candidate = self._provider.download(symbol, p, iv)
+                except Exception as exc:
+                    logger.error("Session fetch error for %s (%s/%s): %s", symbol, p, iv, exc)
+                    continue
+                if candidate is None or candidate.empty:
+                    continue
+                df = _ensure_datetime_index(candidate)
+                df.attrs["resolved_period"] = p
+                df.attrs["resolved_interval"] = iv
+                return df
+            return pd.DataFrame()
+
+        return APP_CACHE.get_or_set(cache_key, self._cache_ttl("5m"), _fetch)
+
     def get_analysis_ohlcv(self, symbol: str, period: str, interval: str) -> pd.DataFrame:
         """Longer lookback for indicators when the visible chart window is too short."""
         period, interval = self.normalize_period_interval(period, interval)
@@ -125,9 +146,10 @@ class MarketService:
 
 def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    out.index = pd.to_datetime(out.index)
-    if getattr(out.index, "tz", None) is not None:
-        out.index = out.index.tz_localize(None)
+    idx = pd.to_datetime(list(out.index), utc=True, errors="coerce")
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_convert(None)
+    out.index = pd.DatetimeIndex(idx)
     return out.sort_index()
 
 

@@ -57,3 +57,13 @@ def test_nlu_messy_questions():
     assert "history" in messy.intents or "analysis" in messy.intents
     follow = understand("price?", previous_symbol="RELIANCE.NS")
     assert follow.symbol == "RELIANCE.NS"
+    chain = understand("Show me RELIANCE option chain")
+    assert chain.symbol == "RELIANCE.NS"
+    assert "option" in chain.intents
+    follow_calls = understand("Show only calls", previous_symbol="^NSEI")
+    assert follow_calls.symbol == "^NSEI"
+    assert follow_calls.chain_view == "calls"
+    nifty_ce = understand("Show me NIFTY 25000 CE")
+    assert nifty_ce.symbol == "^NSEI"
+    assert nifty_ce.strike == 25000
+    assert nifty_ce.option_right == "CE"

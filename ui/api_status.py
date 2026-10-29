@@ -100,8 +100,13 @@ def render_api_management(_user: dict) -> None:
                 <div><b>Current usage (today):</b> {used} ({ok} ok / {fail} failed)</div>
                 <div><b>Remaining requests:</b> {NOT_PROVIDED}</div>
                 <div><b>Fallback:</b> {row.get("FallbackApiCode") or "none"}</div>
+                <div><b>Coverage:</b> {row.get("Purpose")}</div>
                 <div><b>Data freshness:</b> {_fmt_dt(row.get("LastSuccessUtc"))}</div>
                 <div><b>Last successful request:</b> {_fmt_dt(row.get("LastSuccessUtc"))}</div>
+                <div><b>Last failure:</b> {_fmt_dt(row.get("LastFailureUtc"))}</div>
+                <div><b>Realtime vs delayed:</b> Yahoo/Stooq quotes are delayed or last-known, not a live broker feed.</div>
+                <div><b>Historical bars:</b> Yes for Yahoo/Stooq daily; session tapes use 5m when the provider returns them.</div>
+                <div><b>Rate-limit remaining:</b> {NOT_PROVIDED} (providers do not always expose this).</div>
                 <div><b>Latest error:</b> {row.get("LastError") or "—"}</div>
                 <div><b>Configuration:</b> {key_state}</div>
                 <div style="opacity:0.8">{row.get("PricingNote")}</div>

@@ -80,6 +80,43 @@ class OpenAILLM:
         except Exception:
             return None
 
+    def chat_vision(
+        self,
+        *,
+        system: str,
+        user: str,
+        image_jpeg_b64: str,
+        max_tokens: int,
+        temperature: float = 0.2,
+    ) -> str | None:
+        """Multimodal chat using the already-configured model (e.g. gpt-4o-mini)."""
+        try:
+            resp = self._client.chat.completions.create(
+                model=self._model_chat,
+                messages=[
+                    {"role": "system", "content": system},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": user},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{image_jpeg_b64}",
+                                    "detail": "low",
+                                },
+                            },
+                        ],
+                    },
+                ],
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            choice = resp.choices[0].message.content
+            return choice.strip() if choice else None
+        except Exception:
+            return None
+
 
 class NullLLM:
     """No-op backend for offline UI checks."""
@@ -88,4 +125,7 @@ class NullLLM:
         return None
 
     def chat_text(self, **kwargs) -> str | None:
+        return None
+
+    def chat_vision(self, **kwargs) -> str | None:
         return None

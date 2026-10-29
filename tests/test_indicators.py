@@ -36,9 +36,17 @@ def test_fibonacci_levels():
     assert fib.nearest_support <= fib.nearest_resistance or True
 
 
-def test_indicator_context():
+def test_price_structure_columns():
+    df = apply_all_indicators(_sample_ohlcv(80))
+    for col in ("BODY", "UPPER_WICK", "LOWER_WICK", "VWAP_SLOPE", "PX_VS_EMA20"):
+        assert col in df.columns
+        assert df[col].notna().any()
     df = apply_all_indicators(_sample_ohlcv())
     ctx = build_indicator_context(df)
     assert "rsi" in ctx
     assert "fibonacci" in ctx
     assert "patterns" in ctx
+    assert "vwap_slope" in ctx
+    assert "body" in ctx
+    assert "upper_wick" in ctx
+    assert "lower_wick" in ctx

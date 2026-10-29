@@ -35,6 +35,10 @@ class MemoryCache:
         self.set(key, value, ttl_seconds)
         return value
 
+    def delete_prefix(self, prefix: str) -> None:
+        for key in [k for k in self._store if k.startswith(prefix)]:
+            self._store.pop(key, None)
+
     def clear(self) -> None:
         self._store.clear()
 

@@ -37,8 +37,8 @@ def test_session_expiry_helper():
     from auth.session import session_expired
 
     now = datetime.now(timezone.utc)
-    fresh = (now - timedelta(hours=1)).isoformat()
-    stale = (now - timedelta(hours=13)).isoformat()
+    fresh = (now - timedelta(minutes=2)).isoformat()
+    stale = (now - timedelta(minutes=16)).isoformat()
     assert session_expired(fresh) is False
     assert session_expired(stale) is True
     assert session_expired(None) is True

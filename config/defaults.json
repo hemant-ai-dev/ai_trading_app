@@ -22,6 +22,11 @@
       "cache_ttl_seconds": 180
     }
   },
+  "prediction_engine": {
+    "interval_seconds": 60,
+    "default_horizons": ["1m", "5m", "15m", "30m", "60m", "eod"],
+    "min_bars": 40
+  },
   "storage": {
     "predictions_path": "data/storage/predictions.json",
     "sqlite_path": "data/storage/trading_tool.db"

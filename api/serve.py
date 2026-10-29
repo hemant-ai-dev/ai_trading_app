@@ -17,6 +17,15 @@ def start_background_server() -> None:
         return
     _started = True
 
+    try:
+        from config.loader import load_settings
+        from workers.prediction_scheduler import start as start_scheduler
+
+        start_scheduler(load_settings())
+    except Exception:
+        # Scheduler failure must never block the UI process.
+        pass
+
     def _run() -> None:
         try:
             uvicorn.run(

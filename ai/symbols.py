@@ -55,6 +55,10 @@ STOPWORDS = {
     "THEN", "BEEN", "WERE", "WAS", "WILL", "YOUR", "THERE", "HERE",
     "DOES", "DID", "DONT", "DONT", "INTO", "OVER", "UNDER", "AFTER",
     "BEFORE", "BETWEEN", "ALSO", "ONLY", "VERY", "MUCH", "MANY",
+    "OPTION", "OPTIONS", "CHAIN", "EXPIRY", "STRIKE", "PREMIUM",
+    "CALL", "CALLS", "PUT", "PUTS", "CE", "PE", "ATM", "ITM", "OTM",
+    "NEAREST", "AROUND", "CURRENT", "DATA", "OPEN", "HIGH", "LOW",
+    "VOLUME", "INDICATOR", "INDICATORS", "PREDICTION", "CHART",
 }
 
 _TICKER = re.compile(r"\b(\^[A-Z0-9]{2,12}|[A-Z]{2,15}(?:\.[A-Z]{1,4})?)\b")
@@ -121,6 +125,27 @@ def detect_symbol(text: str) -> str | None:
         if token.isalpha() and 3 <= len(token) <= 12 and token in _TYPED_CAPS.findall(raw):
             return f"{token}.NS"
     return None
+
+
+def detect_symbols(text: str, *, limit: int = 2) -> list[str]:
+    """Up to ``limit`` distinct tickers mentioned (for compare questions)."""
+    raw = text or ""
+    compact = compact_key(raw)
+    found: list[str] = []
+    for name in sorted(ALIASES, key=len, reverse=True):
+        key = compact_key(name)
+        if len(key) < 4:
+            continue
+        if key and key in compact:
+            tick = ALIASES[name]
+            if tick not in found:
+                found.append(tick)
+        if len(found) >= limit:
+            return found
+    extra = detect_symbol(raw)
+    if extra and extra not in found:
+        found.append(extra)
+    return found[:limit]
 
 
 def infer_symbol(text: str, default: str | None = None) -> str:

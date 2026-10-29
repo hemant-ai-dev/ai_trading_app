@@ -69,6 +69,10 @@ def build_scenarios(
             series=linear_projection(future_idx, last_close, bull_tgt),
             probability=probs["bullish"],
             summary=f"Upside path toward ₹{bull_tgt:,.2f} if buyers stay in control.",
+            trigger=f"Price confirms above ₹{max(price_high, last_close):,.2f} with volume.",
+            invalidation=f"Close falls back below the breakout / last close ₹{last_close:,.2f}.",
+            direction="UP",
+            evidence="Tilted by the current BUY/HOLD mix and ATR expansion room.",
         ),
         ScenarioPath(
             name="base",
@@ -76,6 +80,10 @@ def build_scenarios(
             series=linear_projection(future_idx, last_close, base_tgt),
             probability=probs["base"],
             summary=f"Base case path toward ₹{base_tgt:,.2f} (primary prediction).",
+            trigger="Price holds the current range and follows the primary path.",
+            invalidation="A close through the opposite invalidation (stop) of the primary plan.",
+            direction="PRIMARY",
+            evidence="Primary model path — not a guarantee.",
         ),
         ScenarioPath(
             name="bearish",
@@ -83,6 +91,10 @@ def build_scenarios(
             series=linear_projection(future_idx, last_close, bear_tgt),
             probability=probs["bearish"],
             summary=f"Downside path toward ₹{bear_tgt:,.2f} if sellers dominate.",
+            trigger=f"Price confirms below ₹{min(price_low, last_close):,.2f} with volume.",
+            invalidation=f"Close reclaims last close ₹{last_close:,.2f} after a failed breakdown.",
+            direction="DOWN",
+            evidence="Tilted by the current SELL/HOLD mix and ATR downside room.",
         ),
     ]
     return scenarios

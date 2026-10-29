@@ -30,6 +30,24 @@ def nse_regular_5m_index(day: date) -> pd.DatetimeIndex:
     return pd.date_range(start=start, end=end, freq="5min")
 
 
+def remaining_session_index(now_ist: datetime, session_close_ist: datetime) -> pd.DatetimeIndex:
+    """5-minute stamps from now through the cash close."""
+    if session_close_ist <= now_ist:
+        return pd.DatetimeIndex([])
+    minute = now_ist.minute - (now_ist.minute % 5)
+    start = now_ist.replace(minute=minute, second=0, microsecond=0)
+    if start < now_ist:
+        start = start + pd.Timedelta(minutes=5)
+    if start > session_close_ist:
+        return pd.DatetimeIndex([now_ist, session_close_ist])
+    idx = pd.date_range(start=start, end=session_close_ist, freq="5min")
+    if len(idx) == 0:
+        return pd.DatetimeIndex([now_ist, session_close_ist])
+    if idx[0] != now_ist:
+        idx = idx.insert(0, now_ist)
+    return idx
+
+
 def linear_projection(index: pd.DatetimeIndex, start_px: float, end_px: float) -> pd.Series:
     n = len(index)
     if n == 0:
@@ -116,9 +134,13 @@ def build_comparison_series(
         return pd.Series(dtype=float), proj, note
 
     actual = today_df["Close"]
+    remain = remaining_session_index(ms.now_ist, bounds_close)
+    if len(remain) >= 2:
+        proj = linear_projection(remain, last_close, float(target_price))
     note = (
-        f"Live session — projection fixed from anchor ₹{anchor_px:.2f} ({anchor_src}) to target "
-        f"₹{float(target_price):.2f}; compare orange path to live closes."
+        f"Live session — yellow path from last print ₹{last_close:.2f} toward "
+        f"target ₹{float(target_price):.2f}; compare with the actual close line. "
+        f"Earlier AI prints stay on the tape."
     )
     return actual, proj, note
 

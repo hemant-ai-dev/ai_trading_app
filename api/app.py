@@ -135,6 +135,16 @@ def prediction_history(symbol: str, user: dict = Depends(current_api_user)) -> d
     return gateway.get_prediction_history(symbol, int(user["UserId"]))
 
 
+@app.get("/api/v1/predictions/{symbol}/explain", tags=["predictions"])
+def prediction_explain(symbol: str, user: dict = Depends(current_api_user)) -> dict[str, Any]:
+    return gateway.get_prediction_explain(symbol, int(user["UserId"]))
+
+
+@app.get("/api/v1/predictions/{symbol}/performance", tags=["predictions"])
+def prediction_performance(symbol: str, user: dict = Depends(current_api_user)) -> dict[str, Any]:
+    return gateway.get_prediction_performance(symbol, int(user["UserId"]))
+
+
 @app.get("/api/v1/news/{symbol}", tags=["news"])
 def news(symbol: str, _user: dict = Depends(current_api_user)) -> dict[str, Any]:
     return gateway.get_news(symbol)

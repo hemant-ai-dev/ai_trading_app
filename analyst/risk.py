@@ -42,14 +42,12 @@ def build_risk_plan(
     signal: str,
     confidence: float,
     regime: str = "sideways",
-    capital: float = 100_000.0,
+    capital: float | None = None,
     max_risk_pct: float = 1.0,
 ) -> RiskPlan:
     """
-    Compute stop, targets, R:R, and a beginner-friendly position size.
-
-    Position size risks about ``max_risk_pct`` of capital to the stop
-    (scaled down when risk_level is High).
+    Compute stop, targets, R:R. Share count is only filled when the user
+    has configured capital — no default account size is assumed.
     """
     close = float(close)
     atr = float(max(atr, close * 0.002, 0.01))
@@ -100,23 +98,29 @@ def build_risk_plan(
     if signal == "HOLD":
         risk_scale *= 0.5
     risk_pct = round(max_risk_pct * risk_scale, 2)
-    risk_rupees = capital * (risk_pct / 100.0)
-    shares = int(risk_rupees / risk_abs) if risk_abs > 0 else 0
-    notional = shares * close
-    position_pct = round(min(100.0, notional / capital * 100), 2) if capital else 0.0
-
-    notes = [
-        f"Risk/Reward ≈ 1:{rr:.2f}.",
-        f"Suggested risk per trade ≈ {risk_pct:.2f}% of capital "
-        f"(~₹{risk_rupees:,.0f} on ₹{capital:,.0f}).",
-    ]
-    if shares > 0:
+    position_pct = 0.0
+    notes = [f"Risk/Reward ≈ 1:{rr:.2f}."]
+    if not capital or capital <= 0:
         notes.append(
-            f"Approx. position: {shares} shares (~{position_pct:.1f}% of capital) "
-            f"so a stop hit loses about {risk_pct:.2f}%."
+            f"Suggested risk per trade ≈ {risk_pct:.2f}% of capital once you set an amount in Risk limits. "
+            "No default capital is assumed."
         )
     else:
-        notes.append("Position size too small at current capital/stop distance — reduce size or skip.")
+        from analyst.sizing import theoretical_size
+
+        sized = theoretical_size(
+            entry=close,
+            stop=stop,
+            capital=float(capital),
+            max_risk_pct=risk_pct,
+        )
+        position_pct = float(sized.get("position_pct") or 0)
+        notes.append(
+            f"Theoretical size {sized.get('qty') or 0} shares · risk ₹{sized.get('risk_rupees')} "
+            f"of ₹{sized.get('budget_rupees')} budget (not an order)."
+        )
+        if sized.get("warning"):
+            notes.append(str(sized["warning"]))
     if level == "High":
         notes.append("High risk regime — prefer smaller size or wait for clearer setup.")
     if rr < 1.2 and signal != "HOLD":

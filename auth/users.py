@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from auth.excel_store import (
@@ -145,15 +144,6 @@ def authenticate(username: str, password: str) -> tuple[UserRecord | None, str |
         return None, "Invalid username or password."
     if not int(row.get("IsActive", 1)):
         return None, "This account is inactive."
-    row["LastLoginAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    try:
-        upsert_user(row)
-    except OSError:
-        pass
-    try:
-        _mirror_sqlite(row)
-    except Exception:
-        pass
     return _row_user(row), None
 
 

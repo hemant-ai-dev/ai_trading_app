@@ -29,14 +29,26 @@ def detect_regime(indicator_ctx: dict[str, Any], market_ctx: dict[str, Any] | No
     preferred: list[str] = []
     de_emphasized: list[str] = []
 
-    # Breakout: ADX rising + volume spike + price away from mid
-    breakout = vol_ratio >= 1.6 and adx >= 22 and abs(ema9 - ema20) / max(close, 1) > 0.002
+    # Breakout / breakdown: ADX rising + volume spike + directional EMA slope
+    breakout_up = vol_ratio >= 1.6 and adx >= 22 and abs(ema9 - ema20) / max(close, 1) > 0.002 and ema9 >= ema20
+    breakout_down = vol_ratio >= 1.6 and adx >= 22 and abs(ema9 - ema20) / max(close, 1) > 0.002 and ema9 < ema20
+    bb_width = float(indicator_ctx.get("bb_width") or 1.0)
+    low_vol = atr_pct < 0.35 and bb_width < 0.045
+    if indicator_ctx.get("breakout_up"):
+        breakout_up = True
+    if indicator_ctx.get("breakdown"):
+        breakout_down = True
 
-    if breakout:
+    if breakout_up:
         regime = "breakout"
         preferred = ["volume", "vwap", "ema", "support_resistance", "macd", "atr"]
         de_emphasized = ["rsi_mean_reversion", "bollinger_mean_reversion"]
-        notes.append("Volume spike with directional move — prioritize breakout confirmation.")
+        notes.append("Volume spike with upward break — prioritize breakout confirmation.")
+    elif breakout_down:
+        regime = "breakdown"
+        preferred = ["volume", "vwap", "ema", "support_resistance", "macd", "atr"]
+        de_emphasized = ["rsi_mean_reversion", "bollinger_mean_reversion", "long_ceilings"]
+        notes.append("Volume spike with downward break — prioritize breakdown confirmation.")
     elif atr_pct >= 1.8 or (vix is not None and float(vix) >= 18):
         regime = "volatile"
         preferred = ["atr", "vwap", "volume", "support_resistance", "bollinger"]
@@ -47,6 +59,16 @@ def detect_regime(indicator_ctx: dict[str, Any], market_ctx: dict[str, Any] | No
         preferred = ["ema", "sma", "adx", "macd", "trendline", "fibonacci"]
         de_emphasized = ["rsi_mean_reversion", "range_oscillators"]
         notes.append("ADX shows a real trend — follow EMA/MACD, fade mean-reversion signals.")
+    elif low_vol:
+        regime = "low_volatility"
+        preferred = ["support_resistance", "bollinger", "volume", "candlestick"]
+        de_emphasized = ["trend_following", "breakout_chasing"]
+        notes.append("Compressed volatility — expect range behavior until volume confirms.")
+    elif 18 <= adx < 25 and abs(rsi - 50) < 8 and trend_dir == "neutral":
+        regime = "uncertain"
+        preferred = ["support_resistance", "volume"]
+        de_emphasized = ["trend_following", "breakout_chasing", "mean_reversion"]
+        notes.append("Conflicting reads — treat as uncertain; low conviction.")
     elif adx < 18 or (45 <= rsi <= 55 and abs(ema9 - ema20) / max(close, 1) < 0.0015):
         regime = "sideways"
         preferred = ["rsi", "bollinger", "support_resistance", "volume", "candlestick"]

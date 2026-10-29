@@ -41,3 +41,16 @@ def test_clip_5d_keeps_five_trading_dates():
     clipped = clip_to_requested_window(df, "5d", "1d")
     assert len({t.date() for t in clipped.index}) == 5
     assert clipped.index.min() == days[-5]
+
+
+def test_monthly_frames_use_month_end_alias():
+    from analyst.frames import build_market_frames
+
+    idx = pd.date_range("2025-11-01", periods=90, freq="B")
+    df = pd.DataFrame(
+        {"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": 100.5, "Volume": 1000.0},
+        index=idx,
+    )
+    frames = build_market_frames(df)
+    assert frames["ok"] is True
+    assert frames["longer_term"]["close"] is not None

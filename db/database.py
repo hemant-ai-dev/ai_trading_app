@@ -90,3 +90,10 @@ def execute(sql: str, params: tuple = ()) -> int:
     with get_connection(commit=True) as cn:
         cur = cn.execute(sql, params)
         return int(cur.lastrowid or 0)
+
+
+def execute_count(sql: str, params: tuple = ()) -> int:
+    """Run a statement and return the number of affected rows (for UPDATE/DELETE)."""
+    with get_connection(commit=True) as cn:
+        cur = cn.execute(sql, params)
+        return int(cur.rowcount or 0)

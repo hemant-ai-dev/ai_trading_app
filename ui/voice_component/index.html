@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; padding: 0; background: transparent; font-family: sans-serif; }
+    .row { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+    button {
+      background: #1c1a44; color: #ece9ff; border: 1px solid rgba(139,124,255,.45);
+      border-radius: 12px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+    }
+    button.hot { background: #7f1d1d; border-color: #ef4444; }
+    #status { color: #9aa0c7; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="row">
+    <button id="mic" type="button">Mic</button>
+    <span id="status">Optional dictation (Chrome/Edge). Review text before Send.</span>
+  </div>
+  <script>
+    function sendMessageToStreamlit(type, data) {
+      const payload = Object.assign({ isStreamlitMessage: true, type: type }, data || {});
+      window.parent.postMessage(payload, "*");
+    }
+    function setFrameHeight(h) { sendMessageToStreamlit("streamlit:setFrameHeight", { height: h }); }
+    function setValue(value) { sendMessageToStreamlit("streamlit:setComponentValue", { value: value }); }
+
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const btn = document.getElementById("mic");
+    const status = document.getElementById("status");
+    let rec = null;
+    let listening = false;
+
+    function stop() {
+      listening = false;
+      btn.classList.remove("hot");
+      btn.textContent = "Mic";
+      try { if (rec) rec.stop(); } catch (e) {}
+    }
+
+    btn.onclick = function () {
+      if (!SpeechRec) {
+        status.textContent = "This browser has no Web Speech API. Type instead, or use Windows dictation (Win+H).";
+        setValue({ ok: false, error: "unsupported", text: "" });
+        return;
+      }
+      if (listening) { stop(); status.textContent = "Stopped. Edit the draft if needed, then Send."; return; }
+      rec = new SpeechRec();
+      rec.lang = "en-IN";
+      rec.interimResults = true;
+      rec.continuous = false;
+      rec.onstart = function () {
+        listening = true;
+        btn.classList.add("hot");
+        btn.textContent = "Stop";
+        status.textContent = "Listening… speak, then Stop. Audio stays in the browser.";
+      };
+      rec.onerror = function (ev) {
+        stop();
+        const denied = ev.error === "not-allowed";
+        status.textContent = denied
+          ? "Microphone permission denied. Allow the site mic, or type."
+          : ("Speech error: " + ev.error);
+        setValue({ ok: false, error: ev.error, text: "" });
+      };
+      rec.onresult = function (ev) {
+        let text = "";
+        for (let i = 0; i < ev.results.length; i++) text += ev.results[i][0].transcript;
+        text = (text || "").trim();
+        if (ev.results[ev.results.length - 1].isFinal && text) {
+          status.textContent = "Captured. Review the draft below, then Send.";
+          setValue({ ok: true, text: text, error: "" });
+          stop();
+        } else {
+          status.textContent = text ? ("Hearing: " + text) : "Listening…";
+        }
+      };
+      rec.onend = function () { if (listening) stop(); };
+      try { rec.start(); } catch (e) {
+        status.textContent = "Could not start the microphone.";
+        setValue({ ok: false, error: String(e), text: "" });
+      }
+    };
+
+    window.addEventListener("load", function () {
+      sendMessageToStreamlit("streamlit:componentReady", { apiVersion: 1 });
+      setFrameHeight(48);
+    });
+  </script>
+</body>
+</html>

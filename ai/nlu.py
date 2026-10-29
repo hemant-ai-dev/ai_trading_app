@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from ai.symbols import ALIASES, compact_key, detect_symbol
+from ai.symbols import ALIASES, compact_key, detect_symbol, detect_symbols
 
 # Informal spellings and Hinglish → something the tools can use.
 _REPLACEMENTS = [
@@ -90,20 +90,29 @@ _PHRASES: list[tuple[str, str]] = [
 ]
 
 _INTENT_WORDS: dict[str, tuple[str, ...]] = {
-    "quote": ("price", "quote", "ltp", "close", "rate", "bhav", "kitna", "value", "trading"),
-    "analysis": ("analyze", "analyse", "analysis", "outlook", "view", "kaisa", "signal", "hold", "buy", "sell", "target", "stop", "about", "tell"),
+    "quote": ("price", "quote", "ltp", "close", "rate", "bhav", "kitna", "value", "trading", "open", "high", "low", "volume", "data"),
+    "analysis": ("analyze", "analyse", "analysis", "outlook", "view", "kaisa", "signal", "hold", "buy", "sell", "target", "stop", "about", "tell", "trend", "support", "resistance", "breakout"),
     "news": ("news", "headline", "sentiment"),
     "history": ("history", "previous", "changed", "accuracy", "prediction", "movement", "days", "week"),
     "risk": ("risk", "stoploss", "stop", "danger"),
     "environment": ("environment", "climate", "esg", "carbon", "pollution", "green", "sustainab", "weather"),
     "app": ("swagger", "excel", "password", "login", "api", "streamlit", "stored", "username"),
     "task": ("monitor", "notify", "prepare", "worker"),
+    "option": ("option", "chain", "expiry", "strike", "premium", "atm", "otm", "itm", "oi", "pcr"),
+    "chart": ("chart", "candle", "graph", "plot", "screenshot", "image", "upload"),
+    "performance": ("performance", "correct", "incorrect", "error"),
+    "compare": ("compare", "versus", "vs", "against"),
+    "image": ("screenshot", "image", "photo", "upload", "picture", "chart image"),
 }
 
 _FOLLOW_UP = re.compile(
-    r"\b(and\s+this|same|uska|iska|uska\s+kya|what\s+about\s+(it|this)|price\s*\??$|aur\s*\??$|now\??$)\b",
+    r"\b(and\s+this|same|uska|iska|uska\s+kya|what\s+about\s+(it|this)|price\s*\??$|aur\s*\??$|now\??$|"
+    r"calls?|puts?|ce|pe|strikes?|atm|expiry|option|chain|premium|nearest|around|"
+    r"that\s+level|the\s+level|support|resistance|break(s|ing)?(\s+it)?|what\s+if|"
+    r"invalidat|entry|stop\s*loss|target|why|how\s+come)\b",
     re.I,
 )
+_OPT_CONTRACT = re.compile(r"\b(\d{4,6})\s*(ce|pe|calls?|puts?)\b", re.I)
 
 
 @dataclass
@@ -114,6 +123,11 @@ class Understood:
     intents: list[str] = field(default_factory=list)
     restated: str = ""
     used_previous_symbol: bool = False
+    option_right: str | None = None
+    strike: float | None = None
+    chain_view: str = "all"
+    nearest_expiry: bool = False
+    compare_symbol: str | None = None
 
 
 def _clean(text: str) -> str:
@@ -166,6 +180,9 @@ def _intents(cleaned: str) -> list[str]:
                 break
     if not found:
         found = ["analysis", "quote"]
+    if any(w in cleaned for w in ("option", "chain", "expiry", "strike", "premium", "atm")):
+        if "option" not in found:
+            found.insert(0, "option")
     # de-dupe
     out: list[str] = []
     for item in found:
@@ -187,12 +204,51 @@ def understand(
     used_prev = False
     if not symbol:
         symbol = _fuzzy_symbol(cleaned, compact)
-    if not symbol and previous_symbol and (_FOLLOW_UP.search(original) or len(cleaned.split()) <= 4):
+    if not symbol and previous_symbol and (_FOLLOW_UP.search(original) or len(cleaned.split()) <= 6):
         symbol = previous_symbol
         used_prev = True
     if not symbol:
         symbol = (default_symbol or "^NSEI").strip().upper() or "^NSEI"
     intents = _intents(cleaned)
+    option_right = None
+    strike = None
+    chain_view = "all"
+    nearest_expiry = bool(re.search(r"\bnearest\s+expir", cleaned))
+    m = _OPT_CONTRACT.search(original) or _OPT_CONTRACT.search(cleaned)
+    if m:
+        try:
+            strike = float(m.group(1))
+        except ValueError:
+            strike = None
+        right_raw = m.group(2).lower()
+        option_right = "PE" if right_raw.startswith("p") else "CE"
+        if "option" not in intents:
+            intents.insert(0, "option")
+    elif re.search(r"\b(only\s+)?(calls?|ce)\b", cleaned) and not re.search(r"\bputs?\b", cleaned):
+        chain_view = "calls"
+        option_right = "CE"
+        if "option" in intents or previous_symbol:
+            if "option" not in intents:
+                intents.insert(0, "option")
+    elif re.search(r"\b(only\s+)?(puts?|pe)\b", cleaned) and not re.search(r"\bcalls?\b", cleaned):
+        chain_view = "puts"
+        option_right = "PE"
+        if "option" in intents or previous_symbol:
+            if "option" not in intents:
+                intents.insert(0, "option")
+    if re.search(r"\b(around|near)\s+(atm|the\s+current|spot|price)\b", cleaned) or "around atm" in cleaned:
+        chain_view = "atm"
+        if "option" not in intents:
+            intents.insert(0, "option")
+    if re.search(r"\bhigh\s+oi\b|\bhighest\s+oi\b", cleaned):
+        chain_view = "high_oi"
+        if "option" not in intents:
+            intents.insert(0, "option")
+    compare_symbol = None
+    pair = detect_symbols(original + " " + cleaned, limit=2)
+    if "compare" in intents and len(pair) >= 2:
+        symbol = pair[0]
+        compare_symbol = pair[1]
     pretty = {
         "^NSEI": "Nifty 50",
         "^NSEBANK": "Bank Nifty",
@@ -205,6 +261,10 @@ def understand(
         restated += " (daily price)"
     if "analysis" in intents:
         restated += " with analysis"
+    if "option" in intents:
+        restated += " (option chain)"
+    if compare_symbol:
+        restated += f" vs {compare_symbol}"
     restated += "."
     return Understood(
         original=original,
@@ -213,6 +273,11 @@ def understand(
         intents=intents,
         restated=restated,
         used_previous_symbol=used_prev,
+        option_right=option_right,
+        strike=strike,
+        chain_view=chain_view,
+        nearest_expiry=nearest_expiry,
+        compare_symbol=compare_symbol,
     )
 
 

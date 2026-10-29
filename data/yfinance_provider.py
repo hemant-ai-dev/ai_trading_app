@@ -84,7 +84,10 @@ class YfinanceMarketData:
                 last_px = float(last_px)
                 last_hist = float(df["Close"].iloc[-1])
                 if abs(last_px - last_hist) / max(last_hist, 1e-6) > 0.0001:
-                    ts = pd.Timestamp.utcnow().tz_localize(None)
+                    # Bars are naive exchange-local (IST) wall times — stamp in IST, not UTC.
+                    from zoneinfo import ZoneInfo
+
+                    ts = pd.Timestamp.now(tz="Asia/Kolkata").tz_localize(None)
                     if ts <= df.index[-1]:
                         ts = df.index[-1] + pd.Timedelta(seconds=1)
                     row = {

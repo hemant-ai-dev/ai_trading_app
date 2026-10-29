@@ -196,6 +196,9 @@ def build_trading_chart(
     show_history: bool = False,
     show_levels: bool = True,
     show_scenarios: bool = False,
+    pred_track: pd.Series | None = None,
+    actual_track: pd.Series | None = None,
+    pred_meta: pd.DataFrame | None = None,
 ) -> go.Figure:
     """
     Build a professional multi-pane candlestick trading chart.
@@ -212,7 +215,7 @@ def build_trading_chart(
         flags["rsi"] = bool(show_rsi)
 
     rows, heights, titles = _subplot_layout(flags)
-    h = 440 if mobile else 680
+    h = 440 if mobile else 500
 
     fig = make_subplots(
         rows=rows,
@@ -260,6 +263,118 @@ def build_trading_chart(
                     )
                 ],
                 hoverinfo="text+x",
+            ),
+            row=price_row,
+            col=1,
+        )
+
+    actual_series = actual_track if actual_track is not None and len(actual_track) else live_line
+    if actual_series is not None and len(actual_series) > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=pd.to_datetime(actual_series.index),
+                y=actual_series.astype(float),
+                name="Actual market",
+                mode="lines",
+                line=dict(color=theme["live"], width=2.4),
+                hovertemplate="Actual: ₹%{y:.2f}<extra></extra>",
+            ),
+            row=price_row,
+            col=1,
+        )
+    if pred_meta is not None and not pred_meta.empty and "target_time" in pred_meta.columns:
+        meta = pred_meta.copy()
+        meta["target_time"] = pd.to_datetime(meta["target_time"])
+        if getattr(meta["target_time"].dt, "tz", None) is not None:
+            meta["target_time"] = meta["target_time"].dt.tz_convert("Asia/Kolkata")
+        last_bar = df_ist.index[-1] if len(df_ist) else None
+        if last_bar is not None:
+            last_bar = pd.Timestamp(last_bar)
+            if last_bar.tzinfo is None and meta["target_time"].dt.tz is not None:
+                last_bar = last_bar.tz_localize("Asia/Kolkata")
+            elif last_bar.tzinfo is not None and meta["target_time"].dt.tz is not None:
+                last_bar = last_bar.tz_convert("Asia/Kolkata")
+        if last_bar is not None:
+            past = meta[meta["target_time"] <= last_bar]
+            future = meta[meta["target_time"] > last_bar]
+        else:
+            past, future = meta, meta.iloc[0:0]
+
+        def _ai_hover(frame: pd.DataFrame) -> list[list[str]]:
+            rows = []
+            for _, row in frame.iterrows():
+                direction = {1: "Hit", 0: "Miss"}.get(
+                    None if row.get("direction_ok") is None or pd.isna(row.get("direction_ok")) else int(row["direction_ok"]),
+                    "Pending",
+                )
+                low = row.get("price_low")
+                high = row.get("price_high")
+                band = ""
+                if low is not None and high is not None and not pd.isna(low) and not pd.isna(high):
+                    band = f"{float(low):,.2f}–{float(high):,.2f}"
+                actual = row.get("actual_price")
+                err = row.get("abs_error")
+                rows.append(
+                    [
+                        str(row.get("created_at") or ""),
+                        str(row.get("target_time") or ""),
+                        "" if row.get("market_price") is None or pd.isna(row.get("market_price")) else f"{float(row['market_price']):,.2f}",
+                        band,
+                        "" if actual is None or pd.isna(actual) else f"{float(actual):,.2f}",
+                        "" if err is None or pd.isna(err) else f"{float(err):,.2f}",
+                        direction,
+                        str(row.get("model_version") or ""),
+                    ]
+                )
+            return rows
+
+        hover = (
+            "Predicted: ₹%{y:,.2f}<br>"
+            "Generated: %{customdata[0]}<br>Target: %{customdata[1]}<br>"
+            "Price at generation: %{customdata[2]}<br>Expected range: %{customdata[3]}<br>"
+            "Actual: %{customdata[4]}<br>Abs error: %{customdata[5]} · Direction: %{customdata[6]}<br>"
+            "Model: %{customdata[7]}<extra></extra>"
+        )
+        if len(past):
+            fig.add_trace(
+                go.Scatter(
+                    x=past["target_time"],
+                    y=past["predicted_price"].astype(float),
+                    name="AI predicted (stored)",
+                    mode="lines+markers",
+                    line=dict(color=theme["pred_future"], width=2.8),
+                    marker=dict(size=6, color=theme["pred_future"]),
+                    customdata=_ai_hover(past),
+                    hovertemplate=hover,
+                ),
+                row=price_row,
+                col=1,
+            )
+        if len(future):
+            fig.add_trace(
+                go.Scatter(
+                    x=future["target_time"],
+                    y=future["predicted_price"].astype(float),
+                    name="AI predicted (still ahead)",
+                    mode="lines+markers",
+                    line=dict(color=theme["pred_future"], width=2.2, dash="dash"),
+                    marker=dict(size=7, symbol="diamond", color=theme["pred_future"]),
+                    customdata=_ai_hover(future),
+                    hovertemplate=hover,
+                ),
+                row=price_row,
+                col=1,
+            )
+    elif pred_track is not None and len(pred_track) > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=pd.to_datetime(pred_track.index),
+                y=pred_track.astype(float),
+                name="AI predicted",
+                mode="lines+markers",
+                line=dict(color=theme["pred_future"], width=2.8),
+                marker=dict(size=6, color=theme["pred_future"]),
+                hovertemplate="AI predicted: ₹%{y:.2f}<extra></extra>",
             ),
             row=price_row,
             col=1,
@@ -397,15 +512,52 @@ def build_trading_chart(
             runs = hp["run_time"].unique()[-(8 if mobile else 16):]
             for i, rt in enumerate(runs):
                 sub = hp[hp["run_time"] == rt]
+                first = sub.iloc[0]
+                mv = str(first.get("model_version") or "")
+                horizon = str(first.get("horizon") or "")
+                gen_px = first.get("market_price")
+                act_px = first.get("actual_price")
+                aerr = first.get("abs_error")
+                direction = str(first.get("signal") or "")
+                custom = [
+                    [
+                        str(rt),
+                        str(row.get("target_time") or ""),
+                        "" if row.get("market_price") is None else f"{float(row['market_price']):,.2f}",
+                        f"{float(row['predicted_price']):,.2f}",
+                        "" if row.get("actual_price") is None or pd.isna(row.get("actual_price"))
+                        else f"{float(row['actual_price']):,.2f}",
+                        "" if row.get("abs_error") is None or pd.isna(row.get("abs_error"))
+                        else f"{float(row['abs_error']):,.2f}",
+                        {1: "Hit", 0: "Miss"}.get(
+                            None if row.get("direction_ok") is None or pd.isna(row.get("direction_ok"))
+                            else int(row["direction_ok"]),
+                            "Pending",
+                        ),
+                        str(row.get("model_version") or ""),
+                    ]
+                    for _, row in sub.iterrows()
+                ]
+                hover = (
+                    "Predicted: ₹%{y:,.2f}<br>"
+                    "Generated: %{customdata[0]}<br>Target: %{customdata[1]}<br>"
+                    "Price at generation: %{customdata[2]}<br>Actual: %{customdata[4]}<br>"
+                    "Error: %{customdata[5]} · Direction: %{customdata[6]}<br>"
+                    "Model: %{customdata[7]}<extra></extra>"
+                )
+                label = "Past AI pred (stored)"
+                if horizon or mv:
+                    label += f" · {horizon} · {mv}".rstrip(" ·")
                 fig.add_trace(
                     go.Scatter(
                         x=pd.to_datetime(sub["target_time"]),
                         y=sub["predicted_price"],
                         mode="lines",
                         line=dict(color=theme["pred_past"], width=1, dash="dot"),
-                        name="Past AI pred" if i == 0 else None,
+                        name=label if i == 0 else None,
                         showlegend=(i == 0),
-                        hovertemplate="Past AI: ₹%{y:.2f}<extra></extra>",
+                        customdata=custom,
+                        hovertemplate=hover,
                         legendgroup="past_pred",
                     ),
                     row=price_row,
@@ -489,8 +641,8 @@ def build_trading_chart(
                 y=proj.values,
                 name="AI next path (guess)",
                 mode="lines",
-                line=dict(color=theme["pred_future"], width=3, dash="dash"),
-                hovertemplate="AI guess: ₹%{y:.2f}<extra></extra>",
+                line=dict(color=theme["pred_future"], width=2.4, dash="dash"),
+                hovertemplate="AI next path: ₹%{y:.2f}<extra></extra>",
             ),
             row=price_row,
             col=1,
@@ -639,8 +791,11 @@ def build_trading_chart(
             if pred_px is None or actual is None or pd.isna(actual):
                 continue
             diff_pct = (float(actual) - float(pred_px)) / float(pred_px) * 100 if pred_px else 0
-            correct = bool(rec.get("win"))
+            if str(rec.get("status") or "") == "pending":
+                continue  # original forecast stays untouched until its target completes
+            correct = bool(rec.get("win")) if rec.get("direction_ok") is None else bool(rec.get("direction_ok"))
             status = "Correct" if correct else "Incorrect"
+            rng = "" if rec.get("range_ok") is None else f" · range {'in' if rec.get('range_ok') else 'out'}"
             color = theme["correct"] if correct else theme["incorrect"]
             icon = "OK" if correct else "X"
             fig.add_annotation(
@@ -648,7 +803,7 @@ def build_trading_chart(
                 y=float(actual),
                 text=(
                     f"{icon} {sig} @ ₹{float(pred_px):,.1f}<br>"
-                    f"Actual ₹{float(actual):,.1f} ({diff_pct:+.1f}%)<br>"
+                    f"Actual ₹{float(actual):,.1f} ({diff_pct:+.1f}%){rng}<br>"
                     f"{status}"
                 ),
                 showarrow=True,

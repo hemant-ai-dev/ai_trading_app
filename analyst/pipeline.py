@@ -8,6 +8,7 @@ Agent flow (matches Prompt.txt + trading_prompt_master.md):
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import pandas as pd
@@ -26,6 +27,9 @@ from analyst.report import build_analyst_report
 from analyst.risk import build_risk_plan
 from analyst.scenarios import build_scenarios
 from analyst.strategies import select_active_strategies
+from analyst.frames import build_market_frames
+from analyst.strategy_registry import choose_primary, snapshot as strategy_snapshot
+from analyst.trade_plan import build_trade_plan
 from analyst.weight_engine import compute_dynamic_weights
 from market_calendar import MarketStatus
 from prediction.history_store import PredictionHistoryStore
@@ -37,6 +41,22 @@ def _trace(agent: str, summary: str, **extra: Any) -> dict[str, Any]:
     row = {"agent": agent, "summary": summary}
     row.update(extra)
     return row
+
+
+def _infer_timeframe(df: pd.DataFrame) -> str:
+    """Nearest supported horizon for the actual bar interval of the feed."""
+    try:
+        diffs = pd.Series(df.index).dropna().diff().dropna()
+        if diffs.empty:
+            return "1d"
+        minutes = float(diffs.median().total_seconds()) / 60.0
+    except Exception:
+        return "1d"
+    options = [(1, "1m"), (5, "5m"), (15, "15m"), (30, "30m"), (60, "60m"), (240, "4h"), (1440, "1d")]
+    best = min(options, key=lambda o: abs(math.log(max(minutes, 1e-6) / o[0])))
+    if minutes >= 1440 * 5:
+        return "1w"
+    return best[1]
 
 
 def _empty_flags() -> dict[str, bool]:
@@ -191,6 +211,16 @@ def run_analyst_pipeline(
         news_aggregate=news_agg,
         news_items=news_items,
     )
+    bar_timeframe = _infer_timeframe(df)
+    chosen, hist_snap = choose_primary(
+        strategy_bundle["primary_strategy"],
+        strategy_bundle["master_regime"],
+        bar_timeframe,
+        ["Alpha", "Beta", "Gamma"],
+    )
+    if hist_snap.get("used_evidence") and chosen in (strategy_bundle.get("strategies") or {}):
+        strategy_bundle["primary_strategy"] = chosen
+    strategy_bundle["selection"] = hist_snap
     agent_trace.append(
         _trace(
             "Strategy Filters",
@@ -242,12 +272,17 @@ def run_analyst_pipeline(
     trend = str(indicator_ctx.get("trend_dir") or "neutral")
 
     # --- 6. Risk Management Agent ---
+    from analyst.sizing import risk_config_from_session
+
+    _risk_cfg = risk_config_from_session()
     risk_plan = build_risk_plan(
         close=close,
         atr=atr,
         signal=signal,
         confidence=confidence,
         regime=regime.regime,
+        capital=_risk_cfg.get("capital"),
+        max_risk_pct=float(_risk_cfg.get("max_risk_pct") or 1.0),
     )
     # Beta guardrail: when Beta is primary and active, force 1.5× ATR stop
     beta = strategy_bundle.get("beta") or {}
@@ -266,6 +301,42 @@ def run_analyst_pipeline(
         risk_plan.notes = list(risk_plan.notes) + [
             "Beta mean-reversion guardrail: stop fixed at 1.5× ATR from entry pivot."
         ]
+
+    sr = indicator_ctx.get("support_resistance") or {}
+    sup = sr.get("support") if isinstance(sr, dict) else None
+    res = sr.get("resistance") if isinstance(sr, dict) else None
+    try:
+        frames = build_market_frames(
+            df,
+            support=sup if isinstance(sup, (list, tuple)) else None,
+            resistance=res if isinstance(res, (list, tuple)) else None,
+        )
+    except Exception:
+        frames = {"ok": False}
+    hist_for_plan = strategy_snapshot(
+        strategy_bundle["primary_strategy"],
+        strategy_bundle["master_regime"],
+        bar_timeframe,
+    )
+    trade_plan = build_trade_plan(
+        symbol=symbol,
+        name=symbol,
+        spot=close,
+        signal=signal,
+        trend=trend,
+        confidence=confidence,
+        predicted_price=risk_plan.predicted_price,
+        atr=atr,
+        support=float(sup[0]) if isinstance(sup, (list, tuple)) and sup else None,
+        resistance=float(res[0]) if isinstance(res, (list, tuple)) and res else None,
+        regime=regime.regime,
+        strategy_id=str(strategy_bundle["primary_strategy"]),
+        strategy_name=str((strategy_bundle.get(str(strategy_bundle["primary_strategy"]).lower()) or {}).get("label") or strategy_bundle["primary_strategy"]),
+        risk_plan=risk_plan.to_dict(),
+        reasons=primary,
+        horizon="session/primary",
+        strategy_history=hist_for_plan,
+    )
 
     agent_trace.append(
         _trace(
@@ -332,6 +403,8 @@ def run_analyst_pipeline(
             "weights": weights,
             "strategies": strategy_bundle,
             "master_output": master,
+            "trade_plan": trade_plan,
+            "market_frames": frames,
         },
         preferred_indicators=regime.preferred_techniques,
         chart_patterns=[p["name"] + " — " + p["reason"] for p in chart_patterns],
@@ -399,7 +472,10 @@ def run_analyst_pipeline(
                 "alpha": strategy_bundle["alpha"],
                 "beta": strategy_bundle["beta"],
                 "gamma": strategy_bundle["gamma"],
+                "selection": strategy_bundle.get("selection") or {},
             },
+            "trade_plan": trade_plan,
+            "market_frames": frames,
             "master_output": master,
             "master_output_json": master_output_json_string(master),
             "market_context": {

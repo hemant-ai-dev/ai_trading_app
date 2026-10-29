@@ -171,6 +171,43 @@ def predict_rule_based(df: pd.DataFrame, indicator_ctx: dict) -> PredictionResul
             score -= 0.35
         simple.append(pattern)
 
+    # Divergences (evidence, never a guaranteed signal on its own)
+    for div in indicator_ctx.get("divergences") or []:
+        if "bullish" in div:
+            score += 0.4
+            reasons.append("RSI bullish divergence")
+            simple.append("Price made a lower low but RSI a higher low — possible downside exhaustion.")
+        elif "bearish" in div:
+            score -= 0.4
+            reasons.append("RSI bearish divergence")
+            simple.append("Price made a higher high but RSI a lower high — upside momentum fading.")
+
+    # Gap behavior vs previous-day levels
+    gap_pct = _safe_float(indicator_ctx.get("gap_pct"), 0.0)
+    prev_high = _safe_float(indicator_ctx.get("prev_day_high"), 0.0)
+    prev_low = _safe_float(indicator_ctx.get("prev_day_low"), 0.0)
+    if gap_pct >= 0.4:
+        reasons.append(f"Gap up {gap_pct:.2f}%")
+        if close >= prev_high > 0:
+            score += 0.3
+            simple.append("Opened with a gap and held above yesterday's high — gap holding.")
+        else:
+            score -= 0.2
+            simple.append("Gap up but trading below yesterday's high — gap not holding.")
+    elif gap_pct <= -0.4:
+        reasons.append(f"Gap down {gap_pct:.2f}%")
+        if close <= prev_low <= 0 or (prev_low and close <= prev_low):
+            score -= 0.3
+            simple.append("Gap down under yesterday's low — breakdown risk.")
+        else:
+            score += 0.2
+            simple.append("Gap down recovering inside yesterday's range — gap fading.")
+
+    # Bollinger squeeze — volatility compression before expansion
+    if indicator_ctx.get("bb_squeeze"):
+        reasons.append("Bollinger squeeze (compressed bands)")
+        simple.append("Bands are tight — watch for a volume-confirmed breakout either way.")
+
     buy_cut, sell_cut = 2.8, -2.8
     if score >= buy_cut:
         signal = "BUY"

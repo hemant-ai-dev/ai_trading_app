@@ -15,7 +15,10 @@ from prediction.engine import run_prediction_pipeline
 from prediction.history_store import PredictionHistoryStore
 from services.market_service import MarketService, clip_to_requested_window
 from services.news_service import NewsService
+from utils.logging import get_logger
 from utils.time_utils import ensure_ist_index
+
+logger = get_logger(__name__)
 
 
 class AnalysisService:
@@ -59,6 +62,14 @@ class AnalysisService:
             df_ist = ensure_ist_index(apply_all_indicators(df_chart))
         df_ist = clip_to_requested_window(df_ist, period, interval)
         latest = float(df_ist["Close"].iloc[-1]) if len(df_ist) else float(df["Close"].iloc[-1])
+        session_ist = pd.DataFrame()
+        try:
+            session_raw = self.market.get_session_ohlcv(symbol)
+            if session_raw is not None and not session_raw.empty:
+                session_ist = ensure_ist_index(session_raw)
+                latest = float(session_ist["Close"].iloc[-1])
+        except Exception:
+            session_ist = pd.DataFrame()
 
         equity_news, world_news = self.news.gather(symbol, include_world_news)
         headline_block, _ = format_headlines_indexed_for_prompt(equity_news, world_news)
@@ -81,24 +92,67 @@ class AnalysisService:
             history=self.history,
         )
 
-        self.history.update_actual_prices(symbol, latest)
-        self.history.save_prediction(symbol, primary, market_price=latest)
         if user_id:
             from prediction import archive
 
+            # Chart refresh evaluates forecasts that are already due. It does not
+            # insert a new prediction — that job belongs to the scheduler, keyed
+            # by user, symbol, horizon, and minute.
             archive.backfill_actuals(int(user_id), symbol, latest)
-            archive.save_prediction(
-                user_id=int(user_id),
-                symbol=symbol,
-                result=primary,
-                market_price=latest,
-                horizon=f"{period}/{interval}",
+            eval_bars = session_ist if not session_ist.empty else df_ist
+            try:
+                archive.evaluate_due(int(user_id), symbol, eval_bars)
+            except Exception as exc:
+                logger.warning("evaluate_due failed for %s: %s", symbol, exc)
+            horizon_key = {
+                "1m": "1m",
+                "2m": "1m",
+                "5m": "5m",
+                "15m": "15m",
+                "30m": "30m",
+                "60m": "60m",
+                "1h": "60m",
+                "1d": "eod",
+            }.get(str(interval))
+            try:
+                pred_meta = archive.chart_series(int(user_id), symbol, horizon=horizon_key)
+            except Exception as exc:
+                logger.warning("chart_series failed for %s: %s", symbol, exc)
+                pred_meta = pd.DataFrame()
+        else:
+            pred_meta = pd.DataFrame()
+        if pred_meta is not None and not pred_meta.empty:
+            pred_track = pd.Series(
+                pred_meta["predicted_price"].astype(float).to_numpy(),
+                index=pd.DatetimeIndex(pred_meta["target_time"]),
+                name="ai_predicted",
             )
+        else:
+            pred_track = pd.Series(dtype=float)
+            pred_meta = pd.DataFrame()
         explanation = build_explanation(primary, primary.indicator_snapshot)
+        snap = primary.indicator_snapshot or {}
+        from analyst.memory import similar_setups
+
+        similar = similar_setups(
+            symbol,
+            {
+                "rsi": snap.get("rsi"),
+                "adx": snap.get("adx"),
+                "trend": snap.get("trend_dir") or primary.trend,
+                "regime": primary.market_regime,
+            },
+            user_id=user_id,
+        )
+        if isinstance(primary.raw, dict):
+            primary.raw["similar_setups"] = similar
 
         last_session = df_ist.index[-1].date()
         session_slice = df_ist.loc[df_ist.index.map(lambda t: t.date()) == last_session]
-        live_line = session_slice["Close"] if not session_slice.empty else df_ist["Close"]
+        if session_ist is not None and not session_ist.empty:
+            live_line = session_ist["Close"]
+        else:
+            live_line = session_slice["Close"] if not session_slice.empty else df_ist["Close"]
 
         return {
             "symbol": symbol,
@@ -106,6 +160,9 @@ class AnalysisService:
             "df": df,
             "df_ist": df_ist,
             "live_line": live_line,
+            "pred_track": pred_track,
+            "pred_meta": pred_meta,
+            "actual_track": None,
             "chart_period": period,
             "chart_interval": interval,
             "latest_price": latest,
@@ -125,5 +182,8 @@ class AnalysisService:
             "regime": extras.get("regime"),
             "risk_plan": (primary.raw or {}).get("risk_plan"),
             "agent_trace": (primary.raw or {}).get("agent_trace"),
+            "trade_plan": (primary.raw or {}).get("trade_plan"),
+            "market_frames": (primary.raw or {}).get("market_frames"),
+            "similar_setups": similar,
             "fallback_note": fallback_note,
         }

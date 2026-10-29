@@ -91,6 +91,10 @@ class ScenarioPath:
     series: pd.Series | None = None
     probability: float = 0.33
     summary: str = ""
+    trigger: str = ""
+    invalidation: str = ""
+    direction: str = ""
+    evidence: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -98,6 +102,10 @@ class ScenarioPath:
             "target_price": self.target_price,
             "probability": round(self.probability, 3),
             "summary": self.summary,
+            "trigger": self.trigger,
+            "invalidation": self.invalidation,
+            "direction": self.direction,
+            "evidence": self.evidence,
             "points": int(len(self.series)) if self.series is not None else 0,
         }
 

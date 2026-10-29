@@ -117,10 +117,41 @@ SCHEMA_STATEMENTS = [
         ReasonsJson TEXT,
         ProjectionJson TEXT,
         ActualPrice REAL,
+        Timeframe TEXT NOT NULL DEFAULT '1d',
+        TargetTime TEXT,
+        Status TEXT NOT NULL DEFAULT 'pending',
+        ModelVersion TEXT,
+        ProbUp REAL,
+        ProbSideways REAL,
+        ProbDown REAL,
+        SignedError REAL,
+        AbsError REAL,
+        ErrorPct REAL,
+        DirectionOk INTEGER,
+        RangeOk INTEGER,
+        ActualTime TEXT,
+        ActualHigh REAL,
+        ActualLow REAL,
+        EvaluatedAt TEXT,
+        ScheduledKey TEXT,
         FOREIGN KEY (UserId) REFERENCES TReadUser (UserId)
     )
     """,
     "CREATE INDEX IF NOT EXISTS IX_TPrediction_UserSymbol ON TPrediction (UserId, Symbol, CreatedAt DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS TLiveWatch (
+        WatchId INTEGER PRIMARY KEY AUTOINCREMENT,
+        UserId INTEGER NOT NULL,
+        Symbol TEXT NOT NULL,
+        IntervalSeconds INTEGER NOT NULL DEFAULT 60,
+        Horizons TEXT NOT NULL DEFAULT '1m,5m,15m,30m,60m,eod',
+        IsActive INTEGER NOT NULL DEFAULT 1,
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UpdatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UNIQUE (UserId, Symbol),
+        FOREIGN KEY (UserId) REFERENCES TReadUser (UserId)
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS TWorkerTask (
         TaskId INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -220,6 +251,71 @@ SCHEMA_STATEMENTS = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS IX_TApiToken_User ON TApiToken (UserId, ExpiresAt)",
+    """
+    CREATE TABLE IF NOT EXISTS TOptionPrediction (
+        OptionPredictionId INTEGER PRIMARY KEY AUTOINCREMENT,
+        UserId INTEGER NOT NULL,
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        Underlying TEXT NOT NULL,
+        UnderlyingPrice REAL,
+        Expiry TEXT,
+        OptionType TEXT,
+        Strike REAL,
+        Contract TEXT,
+        OptionPremium REAL,
+        PredictedPremium REAL,
+        PredictedUnderlying REAL,
+        Horizon TEXT,
+        StopLoss REAL,
+        TargetPrice REAL,
+        Action TEXT,
+        Signal TEXT,
+        Confidence REAL,
+        MarketRegime TEXT,
+        ModelVersion TEXT,
+        ReasonsJson TEXT,
+        ActualPremium REAL,
+        PredictionError REAL,
+        TargetTime TEXT,
+        Status TEXT NOT NULL DEFAULT 'pending',
+        AbsError REAL,
+        ErrorPct REAL,
+        DirectionOk INTEGER,
+        ActualUnderlying REAL,
+        EvaluatedAt TEXT,
+        FOREIGN KEY (UserId) REFERENCES TReadUser (UserId)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS IX_TOptionPrediction_User ON TOptionPrediction (UserId, Underlying, CreatedAt DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS TStrategyPerformance (
+        RowId INTEGER PRIMARY KEY AUTOINCREMENT,
+        StrategyId TEXT NOT NULL,
+        StrategyName TEXT NOT NULL,
+        ModelVersion TEXT NOT NULL,
+        MarketRegime TEXT NOT NULL,
+        Timeframe TEXT NOT NULL DEFAULT '1d',
+        Signals INTEGER NOT NULL DEFAULT 0,
+        Completed INTEGER NOT NULL DEFAULT 0,
+        Successful INTEGER NOT NULL DEFAULT 0,
+        Failed INTEGER NOT NULL DEFAULT 0,
+        DirectionHits INTEGER NOT NULL DEFAULT 0,
+        DirectionTotal INTEGER NOT NULL DEFAULT 0,
+        SumAbsError REAL NOT NULL DEFAULT 0,
+        SumRR REAL NOT NULL DEFAULT 0,
+        UpdatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UNIQUE (StrategyId, MarketRegime, Timeframe)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS TModelVersion (
+        ModelVersion TEXT PRIMARY KEY,
+        Description TEXT NOT NULL,
+        ConfigJson TEXT,
+        Status TEXT NOT NULL DEFAULT 'active',
+        CreatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )
+    """,
 ]
 
 API_SEED = [
