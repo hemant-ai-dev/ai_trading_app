@@ -27,7 +27,7 @@ from ui.options.portal import render_options_workspace
 from ui.portal_workers import render_workers_portal
 from ui.shell import render_app_chrome
 from ui.strategy.desk import render_strategy_workspace
-from ui.styles import inject_responsive_css
+from ui.styles import hide_stale_login_markup, inject_responsive_css
 
 
 def _want_compact_chart() -> bool:
@@ -65,6 +65,7 @@ if not user:
 # so Streamlit cannot reuse sign-in widgets on the desk.
 auth_slot.empty()
 clear_login_form_state()
+hide_stale_login_markup()
 st.session_state.pop("auth_error", None)
 try:
     if str(st.query_params.get("auth") or "") in ("login", "signup", "forgot"):

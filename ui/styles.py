@@ -5,6 +5,20 @@ from __future__ import annotations
 import streamlit as st
 
 
+def hide_stale_login_markup() -> None:
+    """Only after sign-in: hide leftover login HTML if Streamlit left it in the tree."""
+    st.markdown(
+        """
+        <style>
+        .auth-stage, .auth-brand, .auth-lead, .auth-flow, .model-grid,
+        .auth-card-title, .auth-card-hint, .auth-login-shift, .captcha-wrap,
+        .auth-kicker, .preview-wrap { display: none !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def inject_responsive_css(theme: str = "dark") -> None:
     """Inject terminal-style CSS. theme is 'dark' or 'light'."""
     dark = theme != "light"
@@ -31,12 +45,6 @@ def inject_responsive_css(theme: str = "dark") -> None:
         .stApp {{ overflow-x: hidden; }}
         [data-testid="stToolbar"], .stDeployButton, #MainMenu, footer {{
             visibility: hidden !important;
-        }}
-        /* Login HTML/CSS must not remain over the desk after sign-in. */
-        .auth-stage, .auth-brand, .auth-lead, .auth-flow, .model-grid,
-        .auth-card-title, .auth-card-hint, .auth-login-shift, .captcha-wrap,
-        .auth-kicker, .preview-wrap {{
-            display: none !important;
         }}
         header[data-testid="stHeader"] {{
             background: transparent !important;
