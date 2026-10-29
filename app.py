@@ -74,6 +74,17 @@ except Exception:
     pass
 
 initialize()
+try:
+    from auth.users import ensure_sqlite_user
+
+    ensure_sqlite_user(
+        int(user["user_id"]),
+        username=str(user.get("username") or ""),
+        email=str(user.get("email") or ""),
+        role=str(user.get("role") or "User"),
+    )
+except Exception:
+    pass
 start_background_server()
 ANALYSIS_SERVICE_VERSION = 2
 if (

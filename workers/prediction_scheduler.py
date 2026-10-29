@@ -37,26 +37,35 @@ DEFAULT_HORIZONS = ("1m", "5m", "15m", "30m", "60m", "eod")
 
 def set_watch(user_id: int, symbol: str, active: bool, *, interval_seconds: int = 60,
               horizons: list[str] | None = None) -> None:
+    from auth.users import ensure_sqlite_user
+    from db.bootstrap import initialize
     from db.database import execute, fetch_one
 
-    symbol = symbol.upper()
-    hz = ",".join(horizons or list(DEFAULT_HORIZONS))
-    row = fetch_one("SELECT WatchId FROM TLiveWatch WHERE UserId=? AND Symbol=?", (int(user_id), symbol))
-    if row:
-        if active:
+    try:
+        initialize()
+        ensure_sqlite_user(int(user_id))
+        symbol = symbol.upper()
+        hz = ",".join(horizons or list(DEFAULT_HORIZONS))
+        row = fetch_one("SELECT WatchId FROM TLiveWatch WHERE UserId=? AND Symbol=?", (int(user_id), symbol))
+        if row:
+            if active:
+                execute(
+                    "UPDATE TLiveWatch SET IsActive=1, IntervalSeconds=?, Horizons=?, "
+                    "UpdatedAt=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE WatchId=?",
+                    (int(interval_seconds), hz, int(row["WatchId"])),
+                )
+            else:
+                execute(
+                    "UPDATE TLiveWatch SET IsActive=0, UpdatedAt=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE WatchId=?",
+                    (int(row["WatchId"]),),
+                )
+        elif active:
             execute(
-                "UPDATE TLiveWatch SET IsActive=1, IntervalSeconds=?, Horizons=?, "
-                "UpdatedAt=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE WatchId=?",
-                (int(interval_seconds), hz, int(row["WatchId"])),
+                "INSERT OR IGNORE INTO TLiveWatch (UserId, Symbol, IntervalSeconds, Horizons) VALUES (?, ?, ?, ?)",
+                (int(user_id), symbol, int(interval_seconds), hz),
             )
-        else:
-            execute("UPDATE TLiveWatch SET IsActive=0, UpdatedAt=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE WatchId=?",
-                    (int(row["WatchId"]),))
-    elif active:
-        execute(
-            "INSERT INTO TLiveWatch (UserId, Symbol, IntervalSeconds, Horizons) VALUES (?, ?, ?, ?)",
-            (int(user_id), symbol, int(interval_seconds), hz),
-        )
+    except Exception as exc:
+        logger.warning("set_watch skipped: %s", exc)
 
 
 def list_watch(active_only: bool = True) -> list[dict[str, Any]]:
@@ -68,23 +77,33 @@ def list_watch(active_only: bool = True) -> list[dict[str, Any]]:
 
 def watch_exists(user_id: int, symbol: str) -> bool:
     """True once a watch row exists, including one the user turned off."""
+    from db.bootstrap import initialize
     from db.database import fetch_one
 
-    row = fetch_one(
-        "SELECT WatchId FROM TLiveWatch WHERE UserId=? AND Symbol=?",
-        (int(user_id), symbol.upper()),
-    )
-    return row is not None
+    try:
+        initialize()
+        row = fetch_one(
+            "SELECT WatchId FROM TLiveWatch WHERE UserId=? AND Symbol=?",
+            (int(user_id), symbol.upper()),
+        )
+        return row is not None
+    except Exception:
+        return False
 
 
 def is_watched(user_id: int, symbol: str) -> bool:
+    from db.bootstrap import initialize
     from db.database import fetch_one
 
-    row = fetch_one(
-        "SELECT 1 FROM TLiveWatch WHERE UserId=? AND Symbol=? AND IsActive=1",
-        (int(user_id), symbol.upper()),
-    )
-    return row is not None
+    try:
+        initialize()
+        row = fetch_one(
+            "SELECT 1 FROM TLiveWatch WHERE UserId=? AND Symbol=? AND IsActive=1",
+            (int(user_id), symbol.upper()),
+        )
+        return row is not None
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------

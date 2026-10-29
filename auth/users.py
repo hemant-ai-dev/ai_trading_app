@@ -144,6 +144,7 @@ def authenticate(username: str, password: str) -> tuple[UserRecord | None, str |
         return None, "Invalid username or password."
     if not int(row.get("IsActive", 1)):
         return None, "This account is inactive."
+    _mirror_sqlite(row)
     return _row_user(row), None
 
 
@@ -184,15 +185,43 @@ def admin_reset_password(user_id: int) -> tuple[str | None, str | None]:
     return temp, None
 
 
+def ensure_sqlite_user(
+    user_id: int,
+    *,
+    username: str | None = None,
+    email: str | None = None,
+    role: str = "User",
+) -> None:
+    """Insert a SQLite stub for an Excel user so TLiveWatch/TPrediction FKs succeed on Cloud."""
+    _mirror_sqlite(
+        {
+            "UserId": int(user_id),
+            "Username": username,
+            "Email": email,
+            "PasswordHash": "xlsx-auth",
+            "Role": role if role in ("Admin", "User") else "User",
+            "IsActive": 1,
+            "MustChangePassword": 0,
+        }
+    )
+
+
 def _mirror_sqlite(row: dict[str, Any]) -> None:
-    """Keep a stub SQLite row so paper tasks/predictions can reference UserId. Login never reads it."""
+    """Stub TReadUser row. Login still uses Excel. Unique username/email use xlsx_{id} to avoid clashes."""
     try:
+        from db.bootstrap import initialize
         from db.database import get_connection
 
+        initialize()
         uid = int(row.get("UserId") or 0)
         if uid <= 0:
             return
+        stub_name = f"xlsx_{uid}"
+        stub_email = f"xlsx_{uid}@users.local"
         stub = str(row.get("PasswordHash") or "xlsx-auth")
+        role = str(row.get("Role") or "User")
+        if role not in ("Admin", "User"):
+            role = "User"
         with get_connection(commit=True) as cn:
             cn.execute(
                 """
@@ -200,20 +229,10 @@ def _mirror_sqlite(row: dict[str, Any]) -> None:
                     UserId, Username, Email, PasswordHash, Role, IsActive, MustChangePassword
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(UserId) DO UPDATE SET
-                    Username=excluded.Username,
-                    Email=excluded.Email,
                     Role=excluded.Role,
                     IsActive=excluded.IsActive
                 """,
-                (
-                    uid,
-                    str(row.get("Username") or f"user{uid}"),
-                    str(row.get("Email") or f"user{uid}@local"),
-                    stub,
-                    str(row.get("Role") or "User"),
-                    int(row.get("IsActive", 1)),
-                    int(row.get("MustChangePassword", 0)),
-                ),
+                (uid, stub_name, stub_email, stub, role, int(row.get("IsActive", 1)), 0),
             )
     except Exception:
         return

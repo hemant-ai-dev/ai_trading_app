@@ -223,6 +223,17 @@ def test_watch_roundtrip(sqlite_db):
     assert is_watched(1, "TEST.NS") is False
 
 
+def test_set_watch_creates_sqlite_stub_for_excel_user(sqlite_db):
+    """Cloud logins live in Excel; TLiveWatch still needs a TReadUser row."""
+    from db.database import fetch_one
+    from workers.prediction_scheduler import is_watched, set_watch
+
+    set_watch(99, "NIFTY.NS", True)
+    assert is_watched(99, "NIFTY.NS") is True
+    stub = fetch_one("SELECT Username FROM TReadUser WHERE UserId=99")
+    assert stub and stub["Username"] == "xlsx_99"
+
+
 # --- option prediction lifecycle ---------------------------------------------
 
 def test_option_append_mirror_and_evaluate(sqlite_db, tmp_path):
